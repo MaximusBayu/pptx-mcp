@@ -111,6 +111,19 @@ Tools:
 - Emits a `manifest.json` scaffold (one slide_type per slide, one slot stub per fillable shape, constraint placeholders) for the author to edit.
 - This is the v1 stand-in for the phase-2 web tag editor; both produce the same `manifest.json`.
 
+## 2.8 Authoring vs filling — decoupled, no live sync
+
+Two roles act at different times against shared storage; they are never coupled live:
+
+- **Author time (human, website — phase 2):** user designs/arranges the slide kit, including **drag-to-move slot positions**. **Save** writes the updated `base.pptx` + `manifest.json` to storage ("lock").
+- **Fill time (agent, MCP):** agent **pulls** the current saved template via `get_template_schema` / `render_deck` whenever it runs.
+
+There is **no websocket / no push from MCP to the agent.** The agent always reads the latest saved version at call time. "Save = lock" simply means the saved version is what the next `get_schema` returns.
+
+**Drag-to-move changes geometry only.** Moving a slot updates shape position inside `base.pptx`. It does **not** change the slot schema (same slot ids/types). Therefore the agent's contract is unchanged — the agent only ever supplies content by slot name; the engine renders from the updated `base.pptx` and shapes land in their new positions automatically. The agent never needs to be told the layout moved.
+
+A live co-editing session (human dragging while the agent watches) is explicitly **not** a goal and is not built.
+
 ## 3. Data Flow
 
 1. Agent → `list_templates` → picks a template.

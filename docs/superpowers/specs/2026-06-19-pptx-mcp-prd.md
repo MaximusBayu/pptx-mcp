@@ -78,7 +78,11 @@ Target deployment: **multi-user SaaS** (phase 2+). v1 proves the engine + MCP lo
 ## 10. Phasing
 
 - **v1 (this spec):** Python render engine + MCP server + CLI template-registration helper. Templates on local disk. File delivery via small HTTP token-link server.
-- **Phase 2:** Next.js full-stack website — auth, per-user template libraries, `.pptx` upload, click-to-tag slot editor (produces `manifest.json`), light refine (move/restyle/defaults), API-key auth scoping MCP per user, Postgres + object storage.
+- **Phase 2:** Next.js full-stack website — auth, per-user template libraries, `.pptx` upload, click-to-tag slot editor (produces `manifest.json`), **light refine = drag-to-move slot positions** + restyle + defaults, API-key auth scoping MCP per user, Postgres + object storage.
+
+### Authoring/filling decoupling (no websocket)
+
+Layout editing is **author-time only**: a human arranges the template on the website and clicks Save, which locks it into storage. The agent **pulls** the current saved template at call time via MCP — there is no live push/websocket from the website or MCP to the agent. Drag-to-move changes only shape geometry in `base.pptx`; the slot schema (and thus the agent's content contract) is unchanged, so moved layouts require no agent re-instruction.
 
 ## 11. Risks
 
