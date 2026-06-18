@@ -1,0 +1,27 @@
+[project]
+name = "pptx-mcp"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "python-pptx>=0.6.23",
+    "fastmcp>=0.2.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pillow>=10"]
+
+[project.scripts]
+pptx-mcp = "pptx_mcp.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
