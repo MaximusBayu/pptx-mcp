@@ -1,7 +1,7 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Use Node environment for this test file to properly handle FormData
-//@vitest-environment node
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: { template: { create: vi.fn() } } }));
