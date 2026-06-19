@@ -5,7 +5,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
 def _guess_type(shape) -> str:
-    if shape.has_table:
+    if getattr(shape, "has_table", False):
         return "table"
     if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
         return "image"
@@ -13,7 +13,7 @@ def _guess_type(shape) -> str:
 
 
 def _pct(value, total) -> float:
-    return round(100.0 * value / total, 3) if total else 0.0
+    return round(min(100.0, max(0.0, 100.0 * value / total)), 3) if total else 0.0
 
 
 def extract_shapes(pptx_bytes: bytes) -> dict:
@@ -23,7 +23,7 @@ def extract_shapes(pptx_bytes: bytes) -> dict:
     for i, slide in enumerate(prs.slides):
         shapes = []
         for shp in slide.shapes:
-            x, y, w, h = shp.left or 0, shp.top or 0, shp.width or 0, shp.height or 0
+            x, y, w, h = (shp.left if shp.left is not None else 0), (shp.top if shp.top is not None else 0), (shp.width if shp.width is not None else 0), (shp.height if shp.height is not None else 0)
             shapes.append({
                 "shape_id": shp.shape_id, "name": shp.name or "",
                 "type": _guess_type(shp),
