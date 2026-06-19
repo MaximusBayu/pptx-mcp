@@ -9,7 +9,7 @@ class ManifestError(Exception):
     pass
 
 
-def _constraints(d: dict) -> Constraints:
+def _constraints(d: dict | None) -> Constraints:
     d = d or {}
     return Constraints(
         max_chars=d.get("max_chars"), max_lines=d.get("max_lines"),

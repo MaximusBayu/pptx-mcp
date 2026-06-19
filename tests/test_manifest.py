@@ -1,4 +1,3 @@
-import json
 import pytest
 from pptx_mcp.manifest import parse_manifest, validate_against_pptx, ManifestError
 
