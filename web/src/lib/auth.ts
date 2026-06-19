@@ -6,9 +6,21 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+export const authCallbacks = {
+  jwt: async ({ token, user }: any) => {
+    if (user?.id) token.sub = user.id;
+    return token;
+  },
+  session: async ({ session, token }: any) => {
+    if (token.sub && session.user) session.user.id = token.sub;
+    return session;
+  },
+};
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+  callbacks: authCallbacks,
   providers: [
     Google,
     GitHub,
