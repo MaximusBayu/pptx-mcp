@@ -3,7 +3,7 @@ from .models import Constraints
 SHRINK_TOLERANCE = 1.3
 
 
-def assess_text(value: str, c: Constraints) -> tuple[str, str]:
+def assess_text(value: str | None, c: Constraints) -> tuple[str, str]:
     value = value or ""
     if c.max_lines is not None:
         lines = value.split("\n")
@@ -18,7 +18,7 @@ def assess_text(value: str, c: Constraints) -> tuple[str, str]:
     return "ok", ""
 
 
-def assess_table(rows: list[list], c: Constraints) -> tuple[str, str]:
+def assess_table(rows: list[list[object]], c: Constraints) -> tuple[str, str]:
     if c.max_rows is not None and len(rows) > c.max_rows:
         return "reject", f"too many rows: {len(rows)}/{c.max_rows}"
     cols = max((len(r) for r in rows), default=0)
