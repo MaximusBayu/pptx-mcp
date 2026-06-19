@@ -2,6 +2,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DashboardGrid } from "./DashboardGrid";
 
+export const dynamic = "force-dynamic";
+
 export default async function Dashboard() {
   const session = await auth();
   const templates = session?.user?.id

@@ -1,6 +1,8 @@
 import { listPublicTemplates } from "@/lib/templates";
 import { GalleryGrid } from "./GalleryGrid";
 
+export const dynamic = "force-dynamic";
+
 export default async function Gallery() {
   const templates = await listPublicTemplates();
   return (
