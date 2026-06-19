@@ -36,7 +36,10 @@ def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_
     errors = validate(deck_spec, tpl)
     if errors:
         return {"validation": [e.to_dict() for e in errors], "previews": []}
-    data = render(deck_spec, tpl)
+    try:
+        data = render(deck_spec, tpl)
+    except RenderRejected as e:
+        return {"validation": [err.to_dict() for err in e.errors], "previews": []}
     if not libreoffice_available():
         return {"validation": [], "previews": [], "note": "LibreOffice not available"}
     urls = []
