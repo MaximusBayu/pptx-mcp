@@ -1,5 +1,5 @@
 import sys
-import importlib
+import importlib.util
 from pathlib import Path
 
 # reuse the v1 engine fixture — import via spec to avoid circular name collision

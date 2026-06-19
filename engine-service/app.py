@@ -39,18 +39,21 @@ async def base_previews(file: UploadFile = File(...)):
 @app.post("/render-deck")
 async def render_deck(file: UploadFile = File(...),
                       manifest: str = Form(...), deck_spec: str = Form(...)):
-    tpl = load_from_bytes(await file.read(), json.loads(manifest))
+    data = await file.read()
+    tpl = None
     try:
+        tpl = load_from_bytes(data, json.loads(manifest))
         out = render(json.loads(deck_spec), tpl)
     except RenderRejected as e:
         return JSONResponse(status_code=422,
                             content={"validation": [x.to_dict() for x in e.errors]})
     finally:
         # Clean up the temp .pptx written by load_from_bytes to avoid leaking files
-        try:
-            os.unlink(tpl.pptx_path)
-        except Exception:
-            pass
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
     return Response(content=out, media_type=_PPTX)
 
 
@@ -58,8 +61,9 @@ async def render_deck(file: UploadFile = File(...),
 async def render_preview(file: UploadFile = File(...),
                          manifest: str = Form(...), deck_spec: str = Form(...)):
     data = await file.read()
-    tpl = load_from_bytes(data, json.loads(manifest))
+    tpl = None
     try:
+        tpl = load_from_bytes(data, json.loads(manifest))
         errors = validate(json.loads(deck_spec), tpl)
         if errors:
             return {"validation": [e.to_dict() for e in errors], "previews": []}
@@ -70,10 +74,11 @@ async def render_preview(file: UploadFile = File(...),
         return {"validation": [], "previews": [base64.b64encode(p).decode() for p in pngs]}
     finally:
         # Clean up the temp .pptx written by load_from_bytes to avoid leaking files
-        try:
-            os.unlink(tpl.pptx_path)
-        except Exception:
-            pass
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
 
 
 @app.post("/move-shape")
