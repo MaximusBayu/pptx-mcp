@@ -25,7 +25,7 @@ def _fill_text(shape, slot: Slot, value: str) -> None:
     tf.text = value
     decision, _ = assess_text(value, slot.constraints)
     if decision == "shrink":
-        floor = slot.constraints.shrink_floor_pt or 12.0
+        floor = slot.constraints.shrink_floor_pt if slot.constraints.shrink_floor_pt is not None else 12.0
         new_pt = max(floor, _BASE_PT - _SHRINK_STEP)
         for para in tf.paragraphs:
             for run in para.runs:
@@ -41,7 +41,11 @@ def _fill_table(shape, rows: list[list]) -> None:
 
 
 def _fill_image(slide, shape, value) -> None:
-    data = value if isinstance(value, bytes) else open(value, "rb").read()
+    if isinstance(value, bytes):
+        data = value
+    else:
+        with open(value, "rb") as fh:
+            data = fh.read()
     left, top, width, height = shape.left, shape.top, shape.width, shape.height
     shape._element.getparent().remove(shape._element)
     slide.shapes.add_picture(io.BytesIO(data), left, top, width, height)
