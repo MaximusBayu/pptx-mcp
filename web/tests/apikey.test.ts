@@ -30,6 +30,6 @@ describe("api key", () => {
 
   it("rejects unknown prefix", async () => {
     findUnique.mockResolvedValue(null);
-    expect(await verifyApiKey("pk_deadbeef_secret")).toBeNull();
+    expect(await verifyApiKey("pk_deadbeef_aabbccddeeff00112233445566778899")).toBeNull();
   });
 });

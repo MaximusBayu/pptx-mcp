@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { PageTransition } from "@/lib/motion/PageTransition";
 
 export default function Keys() {
-  const [keys, setKeys] = useState<any[]>([]);
+  const [keys, setKeys] = useState<{ id: string; prefix: string; createdAt: string; lastUsedAt: string | null }[]>([]);
   const [raw, setRaw] = useState<string | null>(null);
   async function load() { setKeys(await (await fetch("/api/keys")).json()); }
   useEffect(() => { load(); }, []);
@@ -32,7 +32,7 @@ export default function Keys() {
             <li key={k.id} className="flex justify-between border rounded p-2">
               <span><code>pk_{k.prefix}_…</code></span>
               <button className="text-red-600"
-                onClick={async () => { await fetch(`/api/keys/${k.id}`, { method: "DELETE" }); load(); }}>
+                onClick={async () => { if (!window.confirm("Revoke this key? This cannot be undone.")) return; await fetch(`/api/keys/${k.id}`, { method: "DELETE" }); load(); }}>
                 Revoke
               </button>
             </li>
