@@ -11,5 +11,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (tpl.visibility !== "PUBLIC" && tpl.ownerId !== userId) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  return Response.json(toAgentSchema(tpl.manifestJson));
+  return Response.json(toAgentSchema(tpl.manifestJson, { id: tpl.id, name: tpl.name, description: tpl.description }));
 }

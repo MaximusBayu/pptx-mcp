@@ -15,10 +15,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (tpl.visibility !== "PUBLIC" && tpl.ownerId !== userId) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  const { deck_spec } = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return Response.json({ error: "invalid JSON body" }, { status: 400 }); }
+  const { deck_spec } = body ?? {};
   const base = await getObject(tpl.basePptxKey);
   const out = await renderDeck(base, tpl.manifestJson, deck_spec);
-  if (!out.pptx) return Response.json({ validation: out.validation, download_url: null });
+  if (!out.pptx) return Response.json({ validation: out.validation ?? [], download_url: null });
   const key = `outputs/${id}/${randomBytes(8).toString("hex")}.pptx`;
   await putObject(key, out.pptx, PPTX);
   return Response.json({ validation: [], download_url: await presignGet(key) });

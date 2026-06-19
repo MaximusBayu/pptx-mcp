@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   });
   return Response.json(templates.map((t) => ({
     id: t.id, name: t.name, description: t.description,
-    slide_types: ((t.manifestJson as any).slide_types ?? []).map((st: any) =>
+    slide_types: ((t.manifestJson as any)?.slide_types ?? []).map((st: any) =>
       ({ id: st.id, name: st.name, description: st.description ?? "" })),
   })));
 }

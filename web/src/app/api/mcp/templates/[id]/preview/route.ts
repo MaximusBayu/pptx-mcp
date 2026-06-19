@@ -13,7 +13,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (tpl.visibility !== "PUBLIC" && tpl.ownerId !== userId) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  const { deck_spec } = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return Response.json({ error: "invalid JSON body" }, { status: 400 }); }
+  const { deck_spec } = body ?? {};
   const base = await getObject(tpl.basePptxKey);
   const out = await renderPreview(base, tpl.manifestJson, deck_spec);
   if (out.validation?.length) return Response.json({ validation: out.validation, previews: [] });
