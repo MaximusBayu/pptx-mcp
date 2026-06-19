@@ -6,13 +6,13 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
-def _slug(name: str, fallback: str) -> str:
+def _slug(name: str | None, fallback: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
     return s or fallback
 
 
 def _guess_type(shape) -> str:
-    if shape.has_table:
+    if getattr(shape, "has_table", False):
         return "table"
     if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
         return "image"
@@ -54,7 +54,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "init-template":
         manifest = scaffold_manifest(args.pptx)
-        with open(args.out, "w") as f:
+        with open(args.out, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
         return 0
     return 1
