@@ -21,6 +21,7 @@ class Storage:
         )
 
     def load(self, template_id: str) -> Template:
+        # NOTE: template_id is trusted here (comes from list_template_ids); the phase-2 web layer MUST guard against path traversal before calling this.
         return load_template(self.templates_dir / template_id)
 
     def put_output(self, data: bytes, suffix: str) -> str:

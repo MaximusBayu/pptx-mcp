@@ -13,7 +13,7 @@ def load_template(path) -> Template:
         raise ManifestError(f"manifest.json not found in {path}")
     if not pptx_path.exists():
         raise ManifestError(f"base.pptx not found in {path}")
-    data = json.loads(manifest_path.read_text())
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
     template = parse_manifest(data, str(pptx_path))
     validate_against_pptx(template)
     return template
