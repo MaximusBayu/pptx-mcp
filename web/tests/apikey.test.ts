@@ -25,7 +25,7 @@ describe("api key", () => {
   it("rejects a tampered key", async () => {
     const { raw, prefix, hash } = await generateApiKey();
     findUnique.mockResolvedValue({ id: "k1", userId: "u1", prefix, hash });
-    expect(await verifyApiKey(raw.slice(0, -1) + "0")).toBeNull();
+    expect(await verifyApiKey(raw.slice(0, -1) + (raw.endsWith("0") ? "1" : "0"))).toBeNull();
   });
 
   it("rejects unknown prefix", async () => {
