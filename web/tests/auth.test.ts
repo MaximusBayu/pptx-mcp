@@ -32,5 +32,6 @@ describe("register", () => {
     const arg = create.mock.calls[0][0];
     expect(arg.data.passwordHash).not.toBe("longenough");
     expect(arg.data.passwordHash.length).toBeGreaterThan(20);
+    expect(arg.data.passwordHash.startsWith("$2b$12$")).toBe(true);
   });
 });
