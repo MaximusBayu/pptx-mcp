@@ -27,7 +27,7 @@ export async function renderDeck(pptx: Buffer, manifest: unknown, deckSpec: unkn
     method: "POST",
     body: form(pptx, { manifest: JSON.stringify(manifest), deck_spec: JSON.stringify(deckSpec) }),
   });
-  if (r.status === 422) return { validation: (await r.json()).validation };
+  if (r.status === 422) return { validation: (await r.json()).validation ?? [] };
   if (!r.ok) throw new EngineError("render-deck failed");
   return { pptx: Buffer.from(await r.arrayBuffer()), validation: [] };
 }
@@ -41,7 +41,7 @@ export async function renderPreview(pptx: Buffer, manifest: unknown, deckSpec: u
   return r.json();
 }
 
-export async function moveShape(pptx: Buffer, shapeId: number, bboxPct: object): Promise<Buffer> {
+export async function moveShape(pptx: Buffer, shapeId: number, bboxPct: { x: number; y: number; w: number; h: number }): Promise<Buffer> {
   const r = await fetch(`${BASE}/move-shape`, {
     method: "POST",
     body: form(pptx, { shape_id: String(shapeId), bbox_pct: JSON.stringify(bboxPct) }),
