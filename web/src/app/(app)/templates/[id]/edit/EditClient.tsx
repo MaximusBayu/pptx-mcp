@@ -110,7 +110,7 @@ export function EditClient({ id, name, slides, previewUrls }:
             whileTap={{ scale: 0.97 }}
             onClick={save}
             disabled={saveState !== "idle" || hasOffSlide}
-            className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+            className="btn-primary disabled:opacity-50"
           >
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save template"}
           </motion.button>

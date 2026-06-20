@@ -18,7 +18,7 @@ export default function Keys() {
       <div className="p-8 max-w-xl space-y-4">
         <h1 className="text-2xl font-semibold">API keys</h1>
         <motion.button whileTap={{ scale: 0.97 }} onClick={create}
-          className="bg-black text-white px-4 py-2 rounded">Create key</motion.button>
+          className="btn-primary">Create key</motion.button>
         <AnimatePresence>
           {raw && (
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}

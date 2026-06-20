@@ -32,7 +32,7 @@ export default function NewTemplate() {
         <h1 className="text-2xl font-semibold">Upload a .pptx template</h1>
         {err && <p className="text-red-600">{err}</p>}
         <motion.label whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-          className="block border-2 border-dashed rounded-xl p-10 text-center cursor-pointer">
+          className="block border-2 border-dashed border-matcha-400 rounded-xl p-10 text-center cursor-pointer text-matcha-700 hover:bg-matcha-50 transition-colors">
           {busy ? "Uploading…" : "Click to choose a .pptx"}
           <input type="file" accept=".pptx" hidden disabled={busy}
             onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

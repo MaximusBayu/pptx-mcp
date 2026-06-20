@@ -97,7 +97,7 @@ export function UseClient({ id, name, schema, example, slotCount }: Props) {
               {busy === "preview" ? "Rendering…" : "Preview (PNG)"}
             </motion.button>
             <motion.button whileTap={{ scale: 0.97 }} disabled={busy !== ""} onClick={() => run("render")}
-              className="bg-black text-white px-4 py-2 rounded disabled:opacity-50">
+              className="btn-primary disabled:opacity-50">
               {busy === "render" ? "Rendering…" : "Render .pptx"}
             </motion.button>
           </div>
