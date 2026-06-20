@@ -1,6 +1,6 @@
 "use client";
 import { motion, useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SlotPanel, type DraftSlot } from "./SlotPanel";
 import { placementIssues, type Box } from "@/lib/placement";
 import {
@@ -47,11 +47,10 @@ function buildInitialSlots(slides: Slide[]): Slots {
 }
 
 export function TagEditor({
-  slides, previewUrls, value, onChange, onMove, onIssues,
+  slides, previewUrls, onChange, onMove, onIssues,
 }: {
   slides: Slide[];
   previewUrls: string[];
-  value: Slots;
   onChange: (s: Slots) => void;
   onMove?: (shapeId: number, bbox: Box) => void;
   onIssues?: (issues: PlacementIssues) => void;
@@ -81,16 +80,20 @@ export function TagEditor({
   }
 
   // Compute placement issues from all tagged slots across all slides
-  const issues: PlacementIssues = placementIssues(
-    Object.values(hist.present.slots)
-      .filter((s) => s.id)
-      .map((s) => ({ id: s.id, box: bboxFor(s.shape_id) }))
+  const issues = useMemo<PlacementIssues>(
+    () =>
+      placementIssues(
+        Object.values(hist.present.slots)
+          .filter((s) => s.id)
+          .map((s) => ({ id: s.id, box: bboxFor(s.shape_id) }))
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hist.present]
   );
 
   useEffect(() => {
     onIssues?.(issues);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(issues)]);
+  }, [issues, onIssues]);
 
   // Undo/redo keyboard handling
   useEffect(() => {

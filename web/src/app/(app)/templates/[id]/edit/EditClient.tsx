@@ -101,7 +101,6 @@ export function EditClient({ id, name, slides, previewUrls }:
         <TagEditor
           slides={slides}
           previewUrls={previewUrls}
-          value={slots}
           onChange={setSlots}
           onMove={onMove}
           onIssues={handleIssues}
