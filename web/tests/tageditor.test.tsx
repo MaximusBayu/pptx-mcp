@@ -14,6 +14,18 @@ describe("TagEditor", () => {
     expect(screen.getByRole("button", { name: /Title/ })).toBeInTheDocument();
   });
 
+  it("clips the slide canvas so off-slide shapes can't overlap controls below", () => {
+    // Regression: an off-slide / bleed shape (w+x > 100) was painting and
+    // intercepting clicks over the Save button. The canvas must clip overflow.
+    const bleed = [{
+      index: 0, width_emu: 100, height_emu: 100,
+      shapes: [{ shape_id: 7, name: "Freeform 7", type: "image",
+                 bbox_pct: { x: -20, y: 80, w: 140, h: 40 } }],
+    }];
+    render(<TagEditor slides={bleed} previewUrls={["/p0.png"]} onChange={() => {}} />);
+    expect(screen.getByTestId("slide-canvas").className).toContain("overflow-hidden");
+  });
+
   it("selecting a shape lets you set a slot id", () => {
     const onChange = vi.fn();
     render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={onChange} />);

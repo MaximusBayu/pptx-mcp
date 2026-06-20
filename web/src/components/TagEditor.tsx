@@ -163,7 +163,14 @@ export function TagEditor({
 
   return (
     <div className="flex gap-6">
-      <div ref={containerRef} className="relative w-[640px] aspect-video bg-gray-100">
+      {/* overflow-hidden clips off-slide / bleed shapes to the slide bounds so
+          they cannot paint or intercept clicks over controls (e.g. the Save
+          button) that sit below this canvas in normal flow. */}
+      <div
+        ref={containerRef}
+        data-testid="slide-canvas"
+        className="relative w-[640px] aspect-video bg-gray-100 overflow-hidden"
+      >
         {previewUrls[slideIdx] && (
           <img src={previewUrls[slideIdx]} alt="slide" className="w-full h-full object-contain" />
         )}
