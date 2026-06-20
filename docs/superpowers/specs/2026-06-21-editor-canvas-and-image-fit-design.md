@@ -5,10 +5,12 @@
 
 ## Goal
 
-Make the template editor canvas behave correctly when a user drags a tagged
-box, and make agent-supplied images sized correctly inside their reserved
-spots. Two coupled workstreams in one spec because both were surfaced together
-as "unfinished canvas / image" work and share the editor + engine paths.
+Make the template editor canvas behave correctly: a dragged box lands and
+stays where dropped, the editable area extends to hold intentionally bleeding
+components (with the slide drawn as a reference frame), and boxes covered by a
+larger block stay reachable. Also make agent-supplied images sized correctly
+inside their reserved spots. These coupled workstreams share the editor +
+engine paths, so they ship in one spec.
 
 ## Background
 
@@ -46,8 +48,18 @@ Logic:
 
 UX:
 - **U1:** Every drag triggers a full LibreOffice re-render (slow, no debounce).
-- **U2:** Drag clamps only `x,y ≥ 0`; no upper bound → box draggable off
-  right/bottom → silently off-slide → blocks save.
+- **U2:** Drag has no bounds at all on the upper side; a box can be dragged
+  anywhere, including into the surrounding page UI. The drag must be bounded —
+  but to the **editable canvas** (which includes intentional bleed area), not
+  the slide (see U6).
+- **U5:** A large block (often a full-bleed SVG/freeform) painted on top
+  covers smaller boxes inside the canvas, so they cannot be clicked/selected.
+  This is intra-canvas z-order obstruction — distinct from the `overflow-hidden`
+  clip (commit `26ca8f1`) which only stopped leakage *outside* the canvas.
+- **U6:** The canvas is exactly the slide rectangle, so shapes that
+  intentionally overflow the slide (legitimate bleed design) are clipped and
+  the editable area gives no room to grab them. There is no visible slide
+  boundary either, so on-slide vs. intentional-bleed is invisible.
 - **U3 (deferred):** No resize; no numeric x/y/w/h editing.
 - **U4 (deferred):** Deselect doesn't reset the selected border.
 
@@ -65,22 +77,68 @@ Image:
    no in-editor stale preview).
 2. **Image fit = contain**, centered. Whole image visible inside the box,
    letterbox gap on the short side, no crop, no distortion. `cover` deferred.
-3. **Scope = moves only.** Resize (U3) and deselect-reset (U4) deferred.
+3. **Editable canvas extends to fit overflow.** The canvas viewport is the
+   union of the slide rectangle and every shape's bbox, so intentionally
+   bleeding components stay reachable. The slide is drawn as a reference frame
+   inside it. Off-slide placement is **allowed** (legitimate bleed) — the
+   former off-slide *hard block* on Save becomes a soft amber warning.
+4. **Reach covered boxes = z-order + layer list.** Paint larger boxes first
+   (small boxes on top, always clickable) AND add a sidebar layer list of the
+   slide's shapes to select any one even when fully covered.
+5. **Scope = moves only.** Resize (U3) and deselect-reset (U4) deferred.
 
 ## Architecture
+
+### Editable canvas viewport (fixes U6)
+
+The canvas no longer equals the slide. For each slide, compute the **content
+extent** in slide-percent: the union of the slide rectangle `(0,0,100,100)` and
+every shape's `bbox_pct`, padded by a small margin (e.g. 2%). Call it
+`{ minX, minY, maxX, maxY }` with `rangeX = maxX - minX`, `rangeY = maxY - minY`.
+
+- The canvas element sizes to `rangeX : rangeY` aspect and keeps
+  `overflow-hidden` (clips to the extended canvas, so still no leak into page
+  UI). It carries `data-testid="slide-canvas"`.
+- A **slide frame** (bordered rectangle, non-interactive) is drawn at
+  `left = (0 - minX)/rangeX`, `top = (0 - minY)/rangeY`,
+  `width = 100/rangeX`, `height = 100/rangeY` — so the user sees on-slide vs.
+  intentional bleed.
+- The preview image is positioned to fill the slide frame (it represents the
+  slide, not the extended area).
+- Each shape maps from slide-% to canvas-% via
+  `cx = (bbox.x - minX)/rangeX * 100`, `cy = (bbox.y - minY)/rangeY * 100`,
+  `cw = bbox.w/rangeX * 100`, `ch = bbox.h/rangeY * 100`.
+
+A pure helper `canvasExtent(slide, overrides, margin)` computes the extent and
+`toCanvasPct(bbox, extent)` / `fromCanvasOffset(offsetPx, extent, rectPx)` do
+the mappings, so they are unit-testable without the DOM.
 
 ### Client drag correctness (fixes L1, L2, U2)
 
 `TagEditor.handleDragEnd(slideIndex, shapeId, info)`:
-- Convert `info.offset` (px) to slide-percent using the canvas
-  `getBoundingClientRect()` width/height.
-- `newX = clamp(existing.x + offsetXpct, 0, 100 - existing.w)`;
-  `newY = clamp(existing.y + offsetYpct, 0, 100 - existing.h)`.
+- Convert `info.offset` (px) to **slide-percent**: `dxSlide = offsetX/rectW *
+  rangeX`, `dySlide = offsetY/rectH * rangeY` (rect = canvas
+  `getBoundingClientRect()`), so a drag delta maps back through the extent.
+- `newX = clamp(existing.x + dxSlide, minX, maxX - existing.w)`;
+  `newY = clamp(existing.y + dySlide, minY, maxY - existing.h)`. The clamp is
+  to the **editable canvas extent**, not the slide — a box may sit off-slide
+  (intentional bleed) but cannot leave the canvas into the page UI.
 - Write `bboxOverrides[slideIndex:shapeId] = { ...existing, x: newX, y: newY }`
   through the history reducer.
 
 Shape button gains `dragSnapToOrigin` so framer's transform returns to origin
 on release while the persisted `left/top` becomes the single source of truth.
+
+### Reaching covered boxes — z-order + layer list (fixes U5)
+
+- **Z-order:** render the slide's shapes sorted by bbox area **descending**, so
+  larger boxes paint first (lower in the stack) and smaller boxes sit on top
+  and stay clickable. (Sort a copy for rendering; keep `shape_id` as the React
+  key.)
+- **Layer list:** a sidebar panel lists every shape on the current slide
+  (name + a tag/confidence dot). Clicking a row selects that shape (sets the
+  same composite selected key the canvas uses), so a fully-covered shape is
+  always reachable. The selected row and the selected canvas box stay in sync.
 
 ### Geometry persistence — batch at Save (fixes L4, L5, L6, U1)
 
@@ -101,6 +159,12 @@ on release while the persisted `left/top` becomes the single source of truth.
   Then perform the existing slot-manifest update. All in one PUT.
 - Existing live `/api/templates/[id]/move-shape` route and its test stay
   (back-compat); the editor simply stops calling it.
+- **Off-slide is no longer a hard block** (Decision 3). `EditClient.save`
+  removes the `issues.offSlide.length > 0` early-return; off-slide tagged slots
+  surface as an amber soft warning alongside the overlap warning, and Save
+  proceeds. `isOffSlide`/`placementIssues` detection is unchanged (still used
+  to drive the warning and the red box treatment). The Save button is no longer
+  disabled by `hasOffSlide`.
 
 ### Slide-aware move (fixes L3)
 
@@ -168,10 +232,20 @@ Engine-service (`engine-service/`):
 - `POST /move-shapes` with a 2-move payload returns a valid `.pptx`.
 
 Web (`web/tests/`):
+- `canvasExtent`: with a shape bbox `{x:-10,w:30}` and another `{x:90,w:25}`,
+  the extent spans below 0 and above 100 (plus margin); a slide-only set yields
+  `~0..100`. `toCanvasPct` maps a slide-% bbox into the extent correctly.
 - TagEditor drag: render, mock canvas `getBoundingClientRect`, fire a drag
-  with a known `info.offset`; assert the resulting bbox = start + delta
-  (clamped). Assert `onMove` is called with `(slideIndex, shapeId, bbox)` and
-  that **no** fetch fires during drag.
+  with a known `info.offset`; assert the resulting bbox = start + delta mapped
+  through the extent and clamped to the canvas extent (off-slide allowed,
+  off-canvas not). Assert `onMove` is called with `(slideIndex, shapeId, bbox)`
+  and that **no** fetch fires during drag.
+- Z-order: given shapes of different areas, the rendered DOM order is
+  area-descending (large first), so smaller boxes are later siblings (on top).
+- Layer list: clicking a list row for a covered shape selects it (its
+  SlotPanel/`onChange` reflects that shape).
+- Off-slide save: a tagged off-slide slot produces an amber warning but Save
+  still issues the PUT (no hard block).
 - EditClient save: with a recorded move, the PUT body contains `moves` with
   the correct `slide_index`.
 
