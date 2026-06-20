@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/s3";
-import { extractShapes, renderBasePreviews } from "@/lib/engine";
+import { autodetect, renderBasePreviews } from "@/lib/engine";
 import { createId } from "@/lib/id";
 
 const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const baseKey = `templates/${id}/base.pptx`;
   await putObject(baseKey, bytes, PPTX);
 
-  const shapes = await extractShapes(bytes);
+  const detected = await autodetect(bytes);
   const { previews } = await renderBasePreviews(bytes);
   const previewKeys: string[] = [];
   for (let i = 0; i < previews.length; i++) {
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     data: {
       id, ownerId: session.user.id, name: file.name.replace(/\.pptx$/, ""),
       basePptxKey: baseKey,
-      manifestJson: { draft: { slides: shapes.slides, previewKeys } } as object,
+      manifestJson: { draft: { slides: detected.slides, previewKeys } } as object,
     },
   });
   return Response.json({ id: tpl.id }, { status: 201 });
