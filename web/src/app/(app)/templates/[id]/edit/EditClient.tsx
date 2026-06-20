@@ -1,8 +1,8 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TagEditor } from "@/components/TagEditor";
+import { TagEditor, type PlacementIssues } from "@/components/TagEditor";
 import type { DraftSlot } from "@/components/SlotPanel";
 import { PageTransition } from "@/lib/motion/PageTransition";
 
@@ -13,7 +13,11 @@ export function EditClient({ id, name, slides, previewUrls }:
   const router = useRouter();
   const [slots, setSlots] = useState<Record<string, DraftSlot>>({});
   const [saveErr, setSaveErr] = useState("");
+  const [overlapWarn, setOverlapWarn] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [issues, setIssues] = useState<PlacementIssues>({ offSlide: [], overlapping: [] });
+
+  const handleIssues = useCallback((next: PlacementIssues) => setIssues(next), []);
 
   async function onMove(shapeId: number, bbox: { x: number; y: number; w: number; h: number }) {
     await fetch(`/api/templates/${id}/move-shape`, {
@@ -24,6 +28,23 @@ export function EditClient({ id, name, slides, previewUrls }:
 
   async function save() {
     setSaveErr("");
+    setOverlapWarn("");
+
+    // Hard-block: any slot off-slide
+    if (issues.offSlide.length > 0) {
+      setSaveErr(
+        `Move these slots back on-slide before saving: ${issues.offSlide.join(", ")}`
+      );
+      return;
+    }
+
+    // Soft warning: overlapping slots — show but still allow save to proceed
+    if (issues.overlapping.length > 0) {
+      setOverlapWarn(
+        `Overlapping slots: ${issues.overlapping.map((p) => p.join("+")).join(", ")}`
+      );
+    }
+
     setSaveState("saving");
     try {
       const slideTypes = slides.map((sl, idx) => ({
@@ -51,6 +72,7 @@ export function EditClient({ id, name, slides, previewUrls }:
   }
 
   const taggedCount = Object.values(slots).filter((s) => s.id).length;
+  const hasOffSlide = issues.offSlide.length > 0;
 
   return (
     <PageTransition>
@@ -76,10 +98,21 @@ export function EditClient({ id, name, slides, previewUrls }:
               : `${taggedCount} slot${taggedCount === 1 ? "" : "s"} tagged.`}
           </p>
         </div>
-        <TagEditor slides={slides} previewUrls={previewUrls} value={slots} onChange={setSlots} onMove={onMove} />
-        <div className="flex items-center gap-3">
-          <motion.button whileTap={{ scale: 0.97 }} onClick={save} disabled={saveState !== "idle"}
-            className="bg-black text-white px-4 py-2 rounded disabled:opacity-50">
+        <TagEditor
+          slides={slides}
+          previewUrls={previewUrls}
+          value={slots}
+          onChange={setSlots}
+          onMove={onMove}
+          onIssues={handleIssues}
+        />
+        <div className="flex items-center gap-3 flex-wrap">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={save}
+            disabled={saveState !== "idle" || hasOffSlide}
+            className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+          >
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save template"}
           </motion.button>
           <AnimatePresence>
@@ -92,7 +125,8 @@ export function EditClient({ id, name, slides, previewUrls }:
             )}
           </AnimatePresence>
         </div>
-        {saveErr && <p className="text-red-600">{saveErr}</p>}
+        {saveErr && <p className="text-red-600 text-sm">{saveErr}</p>}
+        {overlapWarn && <p className="text-amber-600 text-sm">{overlapWarn}</p>}
       </div>
     </PageTransition>
   );
