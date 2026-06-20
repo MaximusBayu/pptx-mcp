@@ -87,7 +87,54 @@ Expected output:
 - `engine health` — `{"ok":true}`
 - `register` — HTTP 201 with user JSON
 
-Full UI flows (upload, tag, render, MCP key) require an authenticated browser session; verify manually or add a Playwright suite later.
+For the full UI/agent flow there is now a Playwright suite. With the stack
+running:
+
+```bash
+cd web
+npx playwright install chromium   # first run only
+npm run test:e2e                   # BASE_URL overridable (default http://localhost:3000)
+```
+
+It covers register → upload → tag → save → API key → render, plus the owner
+test-render on the Use page.
+
+---
+
+## Production deployment
+
+The local compose file is a dev convenience. For a real deployment:
+
+### Secrets
+- `AUTH_SECRET` — strong random (`openssl rand -hex 32`). Required.
+- `DATABASE_URL` — managed Postgres connection string.
+- OAuth (`AUTH_GOOGLE_*`, `AUTH_GITHUB_*`) — optional; email/password works without them.
+- Never commit the real `.env`. It is gitignored.
+
+### S3 / object storage and download URLs
+Rendered decks are stored in S3-compatible storage and handed out as
+**presigned URLs**. Two endpoints matter:
+
+- `S3_ENDPOINT` — used by the web container to PUT/GET objects (internal,
+  e.g. `http://minio:9000` in compose, or your private S3 endpoint).
+- `S3_PUBLIC_ENDPOINT` — used **only to sign download URLs**. It must be
+  reachable by whoever opens the link (the agent and/or a browser). The
+  signature is computed over this host, so it cannot be string-swapped after
+  the fact.
+
+In production set `S3_PUBLIC_ENDPOINT` to a publicly reachable address:
+- a real cloud bucket endpoint (S3, Cloudflare R2, etc.), or
+- a public MinIO endpoint behind your domain (e.g. `https://files.example.com`).
+
+If `S3_PUBLIC_ENDPOINT` is unset it falls back to `S3_ENDPOINT` — fine when
+only in-network agents download, but host browsers won't be able to open the
+links.
+
+### Other
+- Put the web service behind TLS; `trustHost: true` is already set for
+  self-hosted/proxied deployments.
+- `prisma migrate deploy` runs automatically on web container start; commit
+  your migrations.
 
 ---
 
