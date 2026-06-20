@@ -57,7 +57,10 @@ export function EditClient({ id, name, slides, previewUrls }:
       <div className="p-8 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">{name}</h1>
-          <a href="/dashboard" className="text-sm text-gray-500 hover:text-black">← Back to my templates</a>
+          <div className="flex items-center gap-4 text-sm">
+            <a href={`/templates/${id}/use`} className="text-gray-500 hover:text-black">Use / integrate →</a>
+            <a href="/dashboard" className="text-gray-500 hover:text-black">← Back to my templates</a>
+          </div>
         </div>
         <div className="rounded-lg border bg-blue-50 text-sm text-gray-700 p-4 space-y-1">
           <p className="font-medium text-gray-900">Tag the parts an agent should fill</p>
