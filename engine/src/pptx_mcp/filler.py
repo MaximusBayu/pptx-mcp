@@ -1,4 +1,6 @@
+import base64
 import io
+import urllib.request
 
 from pptx.util import Pt
 
@@ -10,6 +12,33 @@ from .textfit import truncate_to_sentence
 _BASE_PT = 24.0
 _SHRINK_STEP = 4.0
 _MIN_PT = 12.0
+_IMG_MAX_BYTES = 20 * 1024 * 1024
+
+
+def load_image_bytes(value) -> bytes:
+    """Resolve an image slot value to raw bytes.
+
+    Accepts raw bytes, a data: URL (base64), an http(s) URL, or a local file
+    path (the last is for engine-local/test use). Remote fetches are capped in
+    size and restricted to http(s); the engine runs on input proxied by the
+    web API, but be aware a URL value triggers a server-side fetch.
+    """
+    if isinstance(value, bytes):
+        return value
+    if not isinstance(value, str) or not value:
+        raise ValueError("image value must be a non-empty str or bytes")
+    if value.startswith("data:"):
+        _, _, b64 = value.partition(",")
+        return base64.b64decode(b64)
+    if value.startswith(("http://", "https://")):
+        req = urllib.request.Request(value, headers={"User-Agent": "pptx-mcp"})
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 (scheme checked)
+            data = resp.read(_IMG_MAX_BYTES + 1)
+        if len(data) > _IMG_MAX_BYTES:
+            raise ValueError("image exceeds size limit")
+        return data
+    with open(value, "rb") as fh:
+        return fh.read()
 
 
 def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
@@ -56,11 +85,7 @@ def _fill_table(shape, rows: list[list]) -> None:
 
 
 def _fill_image(slide, shape, value) -> None:
-    if isinstance(value, bytes):
-        data = value
-    else:
-        with open(value, "rb") as fh:
-            data = fh.read()
+    data = load_image_bytes(value)
     left, top, width, height = shape.left, shape.top, shape.width, shape.height
     shape._element.getparent().remove(shape._element)
     slide.shapes.add_picture(io.BytesIO(data), left, top, width, height)
