@@ -38,13 +38,6 @@ def _first_font_pt(shape) -> float | None:
     return None
 
 
-def _is_connector(shape) -> bool:
-    try:
-        return shape.shape_type == MSO_SHAPE_TYPE.LINE
-    except Exception:
-        return False
-
-
 def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
     left = shape.left or 0
     top = shape.top or 0
@@ -61,7 +54,7 @@ def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
         stype = None
 
     # exclude signals
-    if stype in _DECO_TYPES or _is_connector(shape):
+    if stype in _DECO_TYPES:
         score -= 0.5
     if not getattr(shape, "has_text_frame", False) and _guess_type(shape) == "text":
         score -= 0.3
