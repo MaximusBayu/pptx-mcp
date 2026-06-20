@@ -50,12 +50,28 @@ export function EditClient({ id, name, slides, previewUrls }:
     }
   }
 
+  const taggedCount = Object.values(slots).filter((s) => s.id).length;
+
   return (
     <PageTransition>
       <div className="p-8 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">{name}</h1>
           <a href="/dashboard" className="text-sm text-gray-500 hover:text-black">← Back to my templates</a>
+        </div>
+        <div className="rounded-lg border bg-blue-50 text-sm text-gray-700 p-4 space-y-1">
+          <p className="font-medium text-gray-900">Tag the parts an agent should fill</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            <li>Click a highlighted box on the slide to select a shape.</li>
+            <li>Give it a <strong>Slot id</strong> (e.g. <code>title</code>, <code>body</code>) — this is the name the agent fills.</li>
+            <li>Optionally drag a box to reposition it. Untagged shapes keep their template default.</li>
+            <li>Click <strong>Save template</strong> when done.</li>
+          </ol>
+          <p className="text-gray-500">
+            {taggedCount === 0
+              ? "No slots tagged yet — an agent won't be able to fill anything until you tag at least one."
+              : `${taggedCount} slot${taggedCount === 1 ? "" : "s"} tagged.`}
+          </p>
         </div>
         <TagEditor slides={slides} previewUrls={previewUrls} value={slots} onChange={setSlots} onMove={onMove} />
         <div className="flex items-center gap-3">
