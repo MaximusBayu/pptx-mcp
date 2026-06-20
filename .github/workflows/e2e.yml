@@ -1,0 +1,64 @@
+name: E2E
+
+# Heavy: builds the full Docker stack and drives it with Playwright.
+# Runs on PRs to main and on demand. Kept separate from CI so unit
+# failures surface fast.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    name: full stack (playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env
+        run: |
+          cp .env.example .env
+          sed -i "s/^AUTH_SECRET=.*/AUTH_SECRET=$(openssl rand -hex 32)/" .env
+
+      - name: Build and start the stack
+        run: docker compose up -d --build
+
+      - name: Wait for web
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/register || true)
+            if [ "$code" = "200" ]; then echo "web ready"; exit 0; fi
+            sleep 3
+          done
+          echo "web did not become ready"; docker compose logs web; exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run e2e
+        working-directory: web
+        env:
+          BASE_URL: http://localhost:3000
+        run: npx playwright test
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          if-no-files-found: ignore

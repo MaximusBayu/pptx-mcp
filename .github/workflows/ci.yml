@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, Max-dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  web-unit:
+    name: web unit (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx prisma generate
+      - run: npx vitest run
+
+  engine:
+    name: engine (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
