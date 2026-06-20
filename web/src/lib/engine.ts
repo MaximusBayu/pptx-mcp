@@ -56,7 +56,9 @@ export type AutodetectShape = {
   bbox_pct: { x: number; y: number; w: number; h: number };
   confidence: number; is_candidate: boolean;
   suggested_id: string; suggested_max_chars: number;
-  suggested_max_lines: number; font_pt: number | null;
+  suggested_max_lines: number;
+  suggested_max_rows?: number; suggested_max_cols?: number;
+  font_pt: number | null;
 };
 export type AutodetectResult = {
   slides: { index: number; width_emu: number; height_emu: number; shapes: AutodetectShape[] }[];

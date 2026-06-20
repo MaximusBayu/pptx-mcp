@@ -14,6 +14,7 @@ type Shape = {
   confidence?: number; is_candidate?: boolean;
   suggested_id?: string; suggested_max_chars?: number;
   suggested_max_lines?: number;
+  suggested_max_rows?: number; suggested_max_cols?: number;
 };
 type Slide = { index: number; shapes: Shape[] };
 type Slots = Record<string, DraftSlot>;
@@ -42,6 +43,8 @@ export function buildInitialSlots(slides: Slide[]): Slots {
         const constraints: Record<string, number | string> = {};
         if (s.suggested_max_chars) constraints.max_chars = s.suggested_max_chars;
         if (s.suggested_max_lines) constraints.max_lines = s.suggested_max_lines;
+        if (s.suggested_max_rows) constraints.max_rows = s.suggested_max_rows;
+        if (s.suggested_max_cols) constraints.max_cols = s.suggested_max_cols;
         slots[key] = {
           shape_id: s.shape_id,
           slideIndex: slide.index,

@@ -26,6 +26,25 @@ export function SlotPanel({ slot, onChange }: { slot: DraftSlot; onChange: (s: D
             onChange={(e) => onChange({ ...slot, constraints: { ...slot.constraints, max_chars: Number(e.target.value) } })} />
         </label>
       )}
+      {slot.type === "table" && (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-sm">Max rows
+            <input aria-label="Max rows" type="number" className="w-full border p-1 rounded"
+              value={slot.constraints.max_rows ?? ""}
+              onChange={(e) => onChange({ ...slot, constraints: { ...slot.constraints, max_rows: Number(e.target.value) } })} />
+          </label>
+          <label className="block text-sm">Max cols
+            <input aria-label="Max cols" type="number" className="w-full border p-1 rounded"
+              value={slot.constraints.max_cols ?? ""}
+              onChange={(e) => onChange({ ...slot, constraints: { ...slot.constraints, max_cols: Number(e.target.value) } })} />
+          </label>
+        </div>
+      )}
+      {slot.type === "image" && (
+        <p className="text-xs text-gray-500">
+          Image slot — the agent supplies an image URL or base64 data when rendering.
+        </p>
+      )}
     </div>
   );
 }
