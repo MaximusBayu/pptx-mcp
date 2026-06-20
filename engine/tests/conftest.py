@@ -127,3 +127,34 @@ def sample_manifest(sample_template_dir) -> dict:
 @pytest.fixture
 def tiny_png_bytes() -> bytes:
     return _tiny_png()
+
+
+@pytest.fixture
+def labeled_deck(tmp_path):
+    """A 1-slide deck with known slots + decoration. Returns (path, labels).
+    labels maps shape_id -> True (content slot) / False (decoration)."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    labels = {}
+
+    title = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1.5))
+    title.text_frame.text = "Quarterly Business Review"
+    title.text_frame.paragraphs[0].runs[0].font.size = Pt(40)
+    labels[title.shape_id] = True
+
+    body = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(3))
+    body.text_frame.text = "Lorem ipsum dolor sit amet, consectetur adipiscing."
+    body.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
+    labels[body.shape_id] = True
+
+    tiny = slide.shapes.add_textbox(Inches(0.1), Inches(0.1), Inches(0.2), Inches(0.2))
+    labels[tiny.shape_id] = False
+
+    line = slide.shapes.add_connector(2, Inches(1), Inches(6.9), Inches(9), Inches(6.9))
+    labels[line.shape_id] = False
+
+    p = tmp_path / "labeled.pptx"
+    prs.save(str(p))
+    return str(p), labels
