@@ -1,6 +1,6 @@
 "use client";
 export type DraftSlot = {
-  shape_id: number; id: string; name: string;
+  shape_id: number; slideIndex: number; id: string; name: string;
   type: "text" | "table" | "image"; constraints: Record<string, number | string>;
 };
 

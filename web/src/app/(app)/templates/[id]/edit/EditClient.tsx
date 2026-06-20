@@ -47,10 +47,11 @@ export function EditClient({ id, name, slides, previewUrls }:
 
     setSaveState("saving");
     try {
-      const slideTypes = slides.map((sl, idx) => ({
+      const slideTypes = slides.map((_sl, idx) => ({
         id: `slide_${idx}`, name: `Slide ${idx + 1}`, source_slide_index: idx,
-        slots: Object.values(slots).filter((s) =>
-          sl.shapes.some((sh: any) => sh.shape_id === s.shape_id) && s.id),
+        // Use slot.slideIndex (the composite-key slide) instead of shape_id match to
+        // avoid cross-slide collision when two slides share the same shape_id value.
+        slots: Object.values(slots).filter((s) => s.slideIndex === idx && s.id),
       }));
       const res = await fetch(`/api/templates/${id}`, {
         method: "PUT",

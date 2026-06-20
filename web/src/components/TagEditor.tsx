@@ -20,7 +20,12 @@ type Slots = Record<string, DraftSlot>;
 
 export type PlacementIssues = { offSlide: string[]; overlapping: [string, string][] };
 
-type EditorState = { slots: Slots; bboxOverrides: Record<number, Box> };
+type EditorState = { slots: Slots; bboxOverrides: Record<string, Box> };
+
+/** Composite key that is unique across the whole deck: "${slideIndex}:${shapeId}". */
+export function slotKey(slideIndex: number, shapeId: number): string {
+  return `${slideIndex}:${shapeId}`;
+}
 
 function shapeClass(tagged: boolean, conf: number, reduced: boolean | null): string {
   if (!tagged) return "border border-dashed border-neutral-300/40 bg-transparent";
@@ -28,17 +33,22 @@ function shapeClass(tagged: boolean, conf: number, reduced: boolean | null): str
   return `border-2 border-dashed border-amber-500 bg-amber-500/10${reduced ? "" : " animate-pulse"}`;
 }
 
-function buildInitialSlots(slides: Slide[]): Slots {
+export function buildInitialSlots(slides: Slide[]): Slots {
   const slots: Slots = {};
   for (const slide of slides) {
     for (const s of slide.shapes) {
       if (s.is_candidate) {
-        slots[s.shape_id] = {
+        const key = slotKey(slide.index, s.shape_id);
+        const constraints: Record<string, number | string> = {};
+        if (s.suggested_max_chars) constraints.max_chars = s.suggested_max_chars;
+        if (s.suggested_max_lines) constraints.max_lines = s.suggested_max_lines;
+        slots[key] = {
           shape_id: s.shape_id,
+          slideIndex: slide.index,
           id: s.suggested_id ?? "",
           name: s.name,
           type: (s.type as DraftSlot["type"]) ?? "text",
-          constraints: s.suggested_max_chars ? { max_chars: s.suggested_max_chars } : {},
+          constraints,
         };
       }
     }
@@ -58,7 +68,8 @@ export function TagEditor({
   const reduced = useReducedMotion();
   const containerRef = useRef<HTMLDivElement>(null);
   const [slideIdx, setSlideIdx] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
+  // Selected key is a composite key "${slideIndex}:${shapeId}"
+  const [selected, setSelected] = useState<string | null>(null);
 
   // History holds { slots, bboxOverrides }. Initial slots are seeded from candidates.
   const [hist, setHist] = useState<History<EditorState>>(() =>
@@ -73,19 +84,22 @@ export function TagEditor({
 
   const slide = slides[slideIdx];
 
-  function bboxFor(shapeId: number): Box {
-    if (hist.present.bboxOverrides[shapeId]) return hist.present.bboxOverrides[shapeId];
-    const shape = slides.flatMap((sl) => sl.shapes).find((sh) => sh.shape_id === shapeId);
+  function bboxFor(slideIndex: number, shapeId: number): Box {
+    const key = slotKey(slideIndex, shapeId);
+    if (hist.present.bboxOverrides[key]) return hist.present.bboxOverrides[key];
+    // Only look up within the correct slide to avoid cross-slide collisions.
+    const shape = slides[slideIndex]?.shapes.find((sh) => sh.shape_id === shapeId);
     return shape?.bbox_pct ?? { x: 0, y: 0, w: 0, h: 0 };
   }
 
-  // Compute placement issues from all tagged slots across all slides
+  // Compute placement issues from all tagged slots across all slides.
+  // Each slot contributes its slide-correct bbox; the issue label uses the slot's id string.
   const issues = useMemo<PlacementIssues>(
     () =>
       placementIssues(
         Object.values(hist.present.slots)
           .filter((s) => s.id)
-          .map((s) => ({ id: s.id, box: bboxFor(s.shape_id) }))
+          .map((s) => ({ id: s.id, box: bboxFor(s.slideIndex, s.shape_id) }))
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hist.present]
@@ -116,25 +130,27 @@ export function TagEditor({
   }, []);
 
   function updateSlot(slot: DraftSlot) {
+    const key = slotKey(slot.slideIndex, slot.shape_id);
     setHist((h) =>
       pushState(h, {
         ...h.present,
-        slots: { ...h.present.slots, [slot.shape_id]: slot },
+        slots: { ...h.present.slots, [key]: slot },
       })
     );
   }
 
-  function handleDragEnd(shapeId: number, point: { x: number; y: number }) {
+  function handleDragEnd(slideIndex: number, shapeId: number, point: { x: number; y: number }) {
     const box = containerRef.current?.getBoundingClientRect();
     if (!box || !onMove) return;
     const nx = ((point.x - box.left) / box.width) * 100;
     const ny = ((point.y - box.top) / box.height) * 100;
-    const existing = bboxFor(shapeId);
+    const existing = bboxFor(slideIndex, shapeId);
     const newBbox: Box = { ...existing, x: Math.max(0, nx), y: Math.max(0, ny) };
+    const bboxKey = slotKey(slideIndex, shapeId);
     setHist((h) =>
       pushState(h, {
         ...h.present,
-        bboxOverrides: { ...h.present.bboxOverrides, [shapeId]: newBbox },
+        bboxOverrides: { ...h.present.bboxOverrides, [bboxKey]: newBbox },
       })
     );
     onMove(shapeId, newBbox);
@@ -149,10 +165,11 @@ export function TagEditor({
           <img src={previewUrls[slideIdx]} alt="slide" className="w-full h-full object-contain" />
         )}
         {slide.shapes.map((s) => {
-          const slot = hist.present.slots[s.shape_id];
+          const key = slotKey(slideIdx, s.shape_id);
+          const slot = hist.present.slots[key];
           const tagged = Boolean(slot?.id);
           const conf = s.confidence ?? (tagged ? 1 : 0);
-          const bbox = bboxFor(s.shape_id);
+          const bbox = bboxFor(slideIdx, s.shape_id);
           const isOff = offSlideIds.has(slot?.id ?? "");
 
           let cls = shapeClass(tagged, conf, reduced);
@@ -162,13 +179,13 @@ export function TagEditor({
             <motion.button
               key={s.shape_id}
               aria-label={`shape ${s.name}`}
-              onClick={() => setSelected(s.shape_id)}
+              onClick={() => setSelected(key)}
               drag={!!onMove}
               dragMomentum={false}
-              onDragEnd={(_e, info) => handleDragEnd(s.shape_id, info.point)}
+              onDragEnd={(_e, info) => handleDragEnd(slideIdx, s.shape_id, info.point)}
               whileHover={reduced ? undefined : { scale: 1.02 }}
               animate={
-                selected === s.shape_id ? { borderColor: "#2563eb" } : undefined
+                selected === key ? { borderColor: "#2563eb" } : undefined
               }
               className={`absolute ${cls}`}
               style={{
@@ -212,22 +229,30 @@ export function TagEditor({
             </button>
           ))}
         </div>
-        {selected != null && (
-          <SlotPanel
-            slot={
-              hist.present.slots[selected] ?? {
-                shape_id: selected,
-                id: "",
-                name: slide.shapes.find((x) => x.shape_id === selected)?.name ?? "",
-                type:
-                  (slide.shapes.find((x) => x.shape_id === selected)
-                    ?.type as DraftSlot["type"]) ?? "text",
-                constraints: {},
-              }
-            }
-            onChange={updateSlot}
-          />
-        )}
+        {selected != null && (() => {
+          const selSlot = hist.present.slots[selected];
+          if (!selSlot) {
+            // Shape clicked but no slot entry yet — parse composite key for context
+            const [siStr, shStr] = selected.split(":");
+            const si = Number(siStr);
+            const shId = Number(shStr);
+            const sh = slides[si]?.shapes.find((x) => x.shape_id === shId);
+            return (
+              <SlotPanel
+                slot={{
+                  shape_id: shId,
+                  slideIndex: si,
+                  id: "",
+                  name: sh?.name ?? "",
+                  type: (sh?.type as DraftSlot["type"]) ?? "text",
+                  constraints: {},
+                }}
+                onChange={updateSlot}
+              />
+            );
+          }
+          return <SlotPanel slot={selSlot} onChange={updateSlot} />;
+        })()}
       </div>
     </div>
   );

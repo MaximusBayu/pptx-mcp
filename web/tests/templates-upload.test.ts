@@ -21,7 +21,7 @@ vi.mock("@/lib/engine", () => ({
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { autodetect, renderBasePreviews } from "@/lib/engine";
+import { autodetect } from "@/lib/engine";
 import { POST } from "@/app/api/templates/route";
 
 beforeEach(() => vi.clearAllMocks());
