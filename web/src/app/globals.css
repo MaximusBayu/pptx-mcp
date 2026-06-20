@@ -3,21 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f6f7f4;
+  --foreground: #1f2421;
+  --card: #ffffff;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-matcha-600 text-white px-4 py-2 rounded-xl shadow-sm
+           hover:bg-matcha-700 focus-visible:outline-none
+           focus-visible:ring-2 focus-visible:ring-matcha-300 transition-colors;
+  }
+  .card {
+    @apply bg-[var(--card)] rounded-xl shadow-sm border border-neutral-200/70 p-5;
+  }
 }
 
 @layer utilities {
