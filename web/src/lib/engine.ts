@@ -49,3 +49,20 @@ export async function moveShape(pptx: Buffer, shapeId: number, bboxPct: { x: num
   if (!r.ok) throw new EngineError("move-shape failed");
   return Buffer.from(await r.arrayBuffer());
 }
+
+export type AutodetectShape = {
+  shape_id: number; name: string; type: string;
+  bbox_pct: { x: number; y: number; w: number; h: number };
+  confidence: number; is_candidate: boolean;
+  suggested_id: string; suggested_max_chars: number;
+  suggested_max_lines: number; font_pt: number | null;
+};
+export type AutodetectResult = {
+  slides: { index: number; width_emu: number; height_emu: number; shapes: AutodetectShape[] }[];
+};
+
+export async function autodetect(pptx: Buffer): Promise<AutodetectResult> {
+  const r = await fetch(`${BASE}/autodetect`, { method: "POST", body: form(pptx) });
+  if (!r.ok) throw new EngineError("autodetect failed");
+  return r.json();
+}

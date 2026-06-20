@@ -1,5 +1,7 @@
+import io
 from dataclasses import dataclass
 
+from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from .shapes import _guess_type, _pct
@@ -95,6 +97,32 @@ def estimate_max_chars(width_emu, height_emu, font_pt) -> tuple[int, int]:
     chars_per_line = max(1, int(width_emu / (font_emu * GLYPH_W)))
     lines = max(1, int(height_emu / (font_emu * LINE_H)))
     return chars_per_line * lines, lines
+
+
+def autodetect(pptx_bytes: bytes) -> dict:
+    prs = Presentation(io.BytesIO(pptx_bytes))
+    sw, sh = prs.slide_width, prs.slide_height
+    slides = []
+    for i, slide in enumerate(prs.slides):
+        assessments = [classify_shape(shp, sw, sh) for shp in slide.shapes]
+        ids = derive_ids([a for a in assessments if a.is_candidate])
+        shape_by_id = {shp.shape_id: shp for shp in slide.shapes}
+        shapes = []
+        for a in assessments:
+            mc = ml = 0
+            if a.is_candidate and a.type == "text":
+                shp = shape_by_id[a.shape_id]
+                mc, ml = estimate_max_chars(shp.width or 0, shp.height or 0, a.font_pt)
+            shapes.append({
+                "shape_id": a.shape_id, "name": a.name, "type": a.type,
+                "bbox_pct": a.bbox_pct, "confidence": a.confidence,
+                "is_candidate": a.is_candidate,
+                "suggested_id": ids.get(a.shape_id, ""),
+                "suggested_max_chars": mc, "suggested_max_lines": ml,
+                "font_pt": a.font_pt,
+            })
+        slides.append({"index": i, "width_emu": sw, "height_emu": sh, "shapes": shapes})
+    return {"slides": slides}
 
 
 def derive_ids(assessments: list[ShapeAssessment]) -> dict[int, str]:

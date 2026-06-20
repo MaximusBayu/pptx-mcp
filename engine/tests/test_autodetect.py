@@ -1,5 +1,5 @@
 from pptx import Presentation
-from pptx_mcp.autodetect import classify_shape, estimate_max_chars, derive_ids, ShapeAssessment
+from pptx_mcp.autodetect import classify_shape, estimate_max_chars, derive_ids, ShapeAssessment, autodetect
 
 
 def _assess(path):
@@ -55,3 +55,16 @@ def test_derive_ids_hybrid_semantic_then_indexed():
     assert ids[2] == "subtitle"
     assert ids[3] == "body"
     assert ids[4].startswith("text_")
+
+
+def test_autodetect_shapes_have_suggestions(labeled_deck):
+    path, labels = labeled_deck
+    data = open(path, "rb").read()
+    out = autodetect(data)
+    shapes = {s["shape_id"]: s for s in out["slides"][0]["shapes"]}
+    for sid, is_slot in labels.items():
+        assert shapes[sid]["is_candidate"] == is_slot
+    for s in out["slides"][0]["shapes"]:
+        if s["is_candidate"]:
+            assert s["suggested_id"]
+            assert s["suggested_max_chars"] > 0

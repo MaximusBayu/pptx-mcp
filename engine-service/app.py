@@ -5,6 +5,7 @@ import os
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
 from pptx_mcp.move import move_shape
 from pptx_mcp.preview import libreoffice_available, preview
@@ -25,6 +26,11 @@ def health():
 @app.post("/extract-shapes")
 async def extract(file: UploadFile = File(...)):
     return extract_shapes(await file.read())
+
+
+@app.post("/autodetect")
+async def autodetect_route(file: UploadFile = File(...)):
+    return autodetect(await file.read())
 
 
 @app.post("/render-base-previews")
