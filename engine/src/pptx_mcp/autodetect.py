@@ -5,6 +5,10 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from .shapes import _guess_type, _pct
 
 TAU = 0.5
+GLYPH_W = 0.5
+LINE_H = 1.2
+DEFAULT_FONT_PT = 18.0
+EMU_PER_PT = 12700
 
 _DECO_TYPES = {MSO_SHAPE_TYPE.FREEFORM, MSO_SHAPE_TYPE.GROUP, MSO_SHAPE_TYPE.LINE}
 _MIN_AREA_PCT = 1.0
@@ -83,3 +87,44 @@ def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
         confidence=round(confidence, 3), is_candidate=confidence >= TAU,
         font_pt=_first_font_pt(shape),
     )
+
+
+def estimate_max_chars(width_emu, height_emu, font_pt) -> tuple[int, int]:
+    pt = font_pt if font_pt and font_pt > 0 else DEFAULT_FONT_PT
+    font_emu = pt * EMU_PER_PT
+    chars_per_line = max(1, int(width_emu / (font_emu * GLYPH_W)))
+    lines = max(1, int(height_emu / (font_emu * LINE_H)))
+    return chars_per_line * lines, lines
+
+
+def derive_ids(assessments: list[ShapeAssessment]) -> dict[int, str]:
+    text = [a for a in assessments if a.type == "text"]
+    by_area = sorted(text, key=lambda a: a.bbox_pct["w"] * a.bbox_pct["h"], reverse=True)
+    ids: dict[int, str] = {}
+
+    top_sorted = sorted(text, key=lambda a: a.bbox_pct["y"])
+    title = top_sorted[0] if top_sorted else None
+    if title is not None:
+        ids[title.shape_id] = "title"
+        below = [a for a in top_sorted[1:] if a.bbox_pct["y"] > title.bbox_pct["y"]]
+        if below:
+            ids[below[0].shape_id] = "subtitle"
+    for a in by_area:
+        if a.shape_id not in ids:
+            ids[a.shape_id] = "body"
+            break
+
+    counters = {"text": 0, "table": 0, "image": 0}
+    used = set(ids.values())
+    for a in assessments:
+        if a.shape_id in ids:
+            continue
+        base = "image" if a.type == "image" else a.type
+        counters[base] = counters.get(base, 0) + 1
+        cand = f"{base}_{counters[base]}"
+        while cand in used:
+            counters[base] += 1
+            cand = f"{base}_{counters[base]}"
+        ids[a.shape_id] = cand
+        used.add(cand)
+    return ids
