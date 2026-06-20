@@ -19,6 +19,8 @@ export const authCallbacks = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  // Self-hosted (Docker/proxy), not Vercel: trust the incoming Host header.
+  trustHost: true,
   session: { strategy: "jwt" },
   callbacks: authCallbacks,
   providers: [
