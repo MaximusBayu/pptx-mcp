@@ -41,3 +41,14 @@ def test_fill_image(sample_template_dir, tiny_png_bytes):
     fill_slot(prs.slides[0], slot, tiny_png_bytes)  # should not raise
     shp = find_shape(prs.slides[0], slot.shape_id)
     assert shp.shape_type == 13  # still a picture
+
+
+def test_fill_text_overflow_cuts_and_reports(base_template):
+    from pptx import Presentation
+    from pptx_mcp.filler import fill_slot
+    tpl = base_template
+    slot = tpl.slide_types[0].slots[0]
+    slot.constraints.max_chars = 10
+    prs = Presentation(tpl.pptx_path)
+    warnings = fill_slot(prs.slides[0], slot, "First short. Second sentence dropped.")
+    assert any(w.code == "text_truncated" for w in warnings)

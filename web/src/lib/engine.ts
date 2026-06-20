@@ -22,14 +22,15 @@ export async function renderBasePreviews(pptx: Buffer): Promise<{ previews: stri
 }
 
 export async function renderDeck(pptx: Buffer, manifest: unknown, deckSpec: unknown):
-  Promise<{ pptx?: Buffer; validation: any[] }> {
+  Promise<{ pptx?: Buffer; validation: any[]; warnings: any[] }> {
   const r = await fetch(`${BASE}/render-deck`, {
     method: "POST",
     body: form(pptx, { manifest: JSON.stringify(manifest), deck_spec: JSON.stringify(deckSpec) }),
   });
-  if (r.status === 422) return { validation: (await r.json()).validation ?? [] };
+  if (r.status === 422) return { validation: (await r.json()).validation ?? [], warnings: [] };
   if (!r.ok) throw new EngineError("render-deck failed");
-  return { pptx: Buffer.from(await r.arrayBuffer()), validation: [] };
+  const warnings = JSON.parse(r.headers.get("X-Overflow-Warnings") || "[]");
+  return { pptx: Buffer.from(await r.arrayBuffer()), validation: [], warnings };
 }
 
 export async function renderPreview(pptx: Buffer, manifest: unknown, deckSpec: unknown) {

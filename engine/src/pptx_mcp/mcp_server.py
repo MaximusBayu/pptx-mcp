@@ -23,11 +23,11 @@ def tool_get_template_schema(storage: Storage, template_id: str) -> dict:
 def tool_render_deck(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
     tpl = storage.load(template_id)
     try:
-        data = render(deck_spec, tpl)
+        data, warnings = render(deck_spec, tpl)
     except RenderRejected as e:
         return {"validation": [err.to_dict() for err in e.errors], "download_url": None}
     token = storage.put_output(data, ".pptx")
-    return {"validation": [], "download_url": f"{base_url}/files/{token}"}
+    return {"validation": [], "download_url": f"{base_url}/files/{token}", "warnings": warnings}
 
 
 def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
@@ -37,7 +37,7 @@ def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_
     if errors:
         return {"validation": [e.to_dict() for e in errors], "previews": []}
     try:
-        data = render(deck_spec, tpl)
+        data, _ = render(deck_spec, tpl)
     except RenderRejected as e:
         return {"validation": [err.to_dict() for err in e.errors], "previews": []}
     if not libreoffice_available():

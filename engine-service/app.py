@@ -49,7 +49,7 @@ async def render_deck(file: UploadFile = File(...),
     tpl = None
     try:
         tpl = load_from_bytes(data, json.loads(manifest))
-        out = render(json.loads(deck_spec), tpl)
+        out, warnings = render(json.loads(deck_spec), tpl)
     except RenderRejected as e:
         return JSONResponse(status_code=422,
                             content={"validation": [x.to_dict() for x in e.errors]})
@@ -60,7 +60,8 @@ async def render_deck(file: UploadFile = File(...),
                 os.unlink(tpl.pptx_path)
             except OSError:
                 pass
-    return Response(content=out, media_type=_PPTX)
+    return Response(content=out, media_type=_PPTX,
+                    headers={"X-Overflow-Warnings": json.dumps(warnings)})
 
 
 @app.post("/render-preview")
@@ -73,7 +74,7 @@ async def render_preview(file: UploadFile = File(...),
         errors = validate(json.loads(deck_spec), tpl)
         if errors:
             return {"validation": [e.to_dict() for e in errors], "previews": []}
-        out = render(json.loads(deck_spec), tpl)
+        out, _ = render(json.loads(deck_spec), tpl)
         if not libreoffice_available():
             return {"validation": [], "previews": [], "note": "LibreOffice not available"}
         pngs = preview(out)

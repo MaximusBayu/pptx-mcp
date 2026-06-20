@@ -20,8 +20,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { deck_spec } = body ?? {};
   const base = await getObject(tpl.basePptxKey);
   const out = await renderDeck(base, tpl.manifestJson, deck_spec);
-  if (!out.pptx) return Response.json({ validation: out.validation ?? [], download_url: null });
+  if (!out.pptx) return Response.json({ validation: out.validation ?? [], download_url: null, warnings: [] });
   const key = `outputs/${id}/${randomBytes(8).toString("hex")}.pptx`;
   await putObject(key, out.pptx, PPTX);
-  return Response.json({ validation: [], download_url: await presignGet(key) });
+  return Response.json({ validation: [], download_url: await presignGet(key), warnings: out.warnings });
 }

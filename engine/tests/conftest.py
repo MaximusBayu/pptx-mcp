@@ -130,6 +130,39 @@ def tiny_png_bytes() -> bytes:
 
 
 @pytest.fixture
+def base_template(tmp_path):
+    """1-slide template with one text slot for overflow tests."""
+    from pptx_mcp.bytesio import load_from_bytes
+
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    s0 = prs.slides.add_slide(blank)
+    box = _add_textbox(s0, 1, 1, 8, 1.5, "CONTENT")
+    shape_id = box.shape_id
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    pptx_bytes = buf.getvalue()
+
+    manifest = {
+        "template": {"id": "base", "name": "Base", "description": "Overflow test template"},
+        "slide_types": [
+            {
+                "id": "content", "name": "Content Slide", "description": "Single text slot",
+                "source_slide_index": 0,
+                "slots": [
+                    {"id": "body", "name": "Body", "type": "text",
+                     "target": {"shape_id": shape_id},
+                     "required": True, "default": None,
+                     "constraints": {"max_chars": 100, "max_lines": 5, "shrink_floor_pt": 12}},
+                ],
+            },
+        ],
+    }
+    return load_from_bytes(pptx_bytes, manifest)
+
+
+@pytest.fixture
 def labeled_deck(tmp_path):
     """A 1-slide deck with known slots + decoration. Returns (path, labels).
     labels maps shape_id -> True (content slot) / False (decoration)."""

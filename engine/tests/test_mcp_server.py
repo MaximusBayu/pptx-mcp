@@ -34,10 +34,20 @@ def test_render_deck_ok(storage):
     out = tool_render_deck(storage, "http://x", "sample", _deck())
     assert out["validation"] == []
     assert out["download_url"].startswith("http://x/files/")
+    assert "warnings" in out
 
 
 def test_render_deck_invalid(storage):
-    bad = {"slides": [{"slide_type": "title", "slots": {"title": "x" * 200}}]}
+    # Tables still reject; text overflow now produces warnings (non-fatal)
+    bad = {"slides": [{"slide_type": "table", "slots": {"data": [["a"]] * 10}}]}
     out = tool_render_deck(storage, "http://x", "sample", bad)
     assert out["download_url"] is None
-    assert out["validation"][0]["code"] == "text_overflow"
+    assert out["validation"][0]["code"] == "table_overflow"
+
+
+def test_render_deck_text_overflow_warns(storage):
+    # Text over limit produces a warning but still renders
+    bad = {"slides": [{"slide_type": "title", "slots": {"title": "First sentence. " * 20, "subtitle": ""}}]}
+    out = tool_render_deck(storage, "http://x", "sample", bad)
+    assert out["download_url"] is not None
+    assert any(w["code"] == "text_truncated" for w in out["warnings"])

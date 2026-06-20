@@ -32,15 +32,17 @@ def test_missing_required(sample_template_dir):
     assert any(e.code == "missing_required_slot" and e.slot_id == "title" for e in errs)
 
 
-def test_text_overflow_rejects(sample_template_dir):
+def test_text_over_limit_not_rejected(sample_template_dir):
+    # Text overflow is now non-fatal (shrink+cut at fill time), not a validation error
     tpl = load_template(sample_template_dir)
     errs = validate({"slides": [{"slide_type": "title", "slots": {"title": "x" * 100}}]}, tpl)
-    assert any(e.code == "text_overflow" for e in errs)
+    assert not any(e.code == "text_overflow" for e in errs)
+    assert errs == []
 
 
 def test_text_shrink_not_error(sample_template_dir):
     tpl = load_template(sample_template_dir)
-    # title max 40, *1.3 = 52 -> 45 chars shrinks, not rejected
+    # title max 40, any over-limit text is now a non-fatal shrink+cut
     errs = validate({"slides": [{"slide_type": "title", "slots": {"title": "x" * 45}}]}, tpl)
     assert errs == []
 
