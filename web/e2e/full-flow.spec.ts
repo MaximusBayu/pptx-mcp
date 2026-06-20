@@ -18,18 +18,14 @@ test("agent path: upload, tag, key, render", async ({ page }) => {
   await page.getByRole("button", { name: /sign up/i }).click();
   await page.waitForURL("**/dashboard");
 
-  // upload -> edit
+  // upload -> edit (auto-detect pre-tags all candidate slots)
   await page.goto("/templates/new");
   await page.locator('input[type="file"]').setInputFiles(FIXTURE);
   await page.waitForURL("**/templates/**/edit");
   const templateId = page.url().match(/templates\/([^/]+)\/edit/)![1];
 
-  // tag first shape as slot "title"
+  // auto-detect already tags slots; just save and proceed
   await page.waitForSelector('button[aria-label^="shape"]');
-  await page.locator('button[aria-label^="shape"]').first().click();
-  await page.getByLabel("Slot id").fill("title");
-
-  // save -> redirected to dashboard
   await page.getByRole("button", { name: /save template/i }).click();
   await page.waitForURL("**/dashboard");
 
@@ -45,10 +41,25 @@ test("agent path: upload, tag, key, render", async ({ page }) => {
   }
   expect(rawKey, "raw API key visible once").toMatch(/^pk_/);
 
-  // render a deck via the MCP API using the key
+  // fetch the template schema to discover all required slots
+  const schemaRes = await page.request.get(`/api/mcp/templates/${templateId}/schema`, {
+    headers: { "x-api-key": rawKey },
+  });
+  expect(schemaRes.status()).toBe(200);
+  const schema = await schemaRes.json();
+
+  // build a deck_spec that fills every slot of every slide_type
+  const deck = {
+    slides: schema.slide_types.map((st: any) => ({
+      slide_type: st.id,
+      slots: Object.fromEntries(st.slots.map((s: any) => [s.id, `E2E ${s.id}`])),
+    })),
+  };
+
+  // render a deck via the MCP API using the key -- all slots filled
   const res = await page.request.post(`/api/mcp/templates/${templateId}/render`, {
     headers: { "x-api-key": rawKey, "content-type": "application/json" },
-    data: { deck_spec: { slides: [{ slide_type: "slide_0", slots: { title: "Hello from E2E" } }] } },
+    data: { deck_spec: deck },
   });
   expect(res.status()).toBe(200);
   const body = await res.json();
@@ -70,17 +81,16 @@ test("owner test-render on Use page returns a download link", async ({ page }) =
   await page.waitForURL("**/templates/**/edit");
   const templateId = page.url().match(/templates\/([^/]+)\/edit/)![1];
 
+  // auto-detect already tags slots; just save
   await page.waitForSelector('button[aria-label^="shape"]');
-  await page.locator('button[aria-label^="shape"]').first().click();
-  await page.getByLabel("Slot id").fill("title");
   await page.getByRole("button", { name: /save template/i }).click();
   await page.waitForURL("**/dashboard");
 
   await page.goto(`/templates/${templateId}/use`);
   await expect(page.getByText(/Slots this template exposes/)).toBeVisible();
-  await page.locator("textarea").fill(
-    JSON.stringify({ slides: [{ slide_type: "slide_0", slots: { title: "From Use Page" } }] }),
-  );
+
+  // The Use page pre-populates the textarea via buildExampleDeckSpec (all slots filled).
+  // Do NOT overwrite with a single-slot spec -- just click Render as-is.
   await page.getByRole("button", { name: /Render \.pptx/ }).click();
   const link = page.getByRole("link", { name: /Download rendered/ });
   await expect(link).toBeVisible({ timeout: 60_000 });

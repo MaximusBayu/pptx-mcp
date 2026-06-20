@@ -15,7 +15,9 @@ test("upload pre-tags candidate slots", async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(FIXTURE);
   await page.waitForURL("**/templates/**/edit");
 
+  // Selecting a candidate shape reveals its slot panel, pre-filled by auto-detect.
   await page.waitForSelector('button[aria-label^="shape"]');
-  const prefilled = await page.getByLabel("Slot id").first().inputValue().catch(() => "");
+  await page.locator('button[aria-label^="shape"]').first().click();
+  const prefilled = await page.getByLabel("Slot id").inputValue();
   expect(prefilled.length).toBeGreaterThan(0);
 });
