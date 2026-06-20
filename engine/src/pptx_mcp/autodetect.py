@@ -15,6 +15,12 @@ EMU_PER_PT = 12700
 _DECO_TYPES = {MSO_SHAPE_TYPE.FREEFORM, MSO_SHAPE_TYPE.GROUP, MSO_SHAPE_TYPE.LINE}
 _MIN_AREA_PCT = 1.0
 _MIN_DIM_PCT = 0.5
+# A tiny box holding only 1-2 characters is almost always a sequence number,
+# bullet, or label marker (e.g. the "03"/"04" agenda numbers in real decks),
+# not a fillable content slot. Penalize it so it drops below the candidate
+# threshold while genuine short fields (a "2026" date, ~4 chars) survive.
+_MICRO_AREA_PCT = 30.0
+_MICRO_TEXT_LEN = 2
 
 
 @dataclass
@@ -73,6 +79,9 @@ def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
                or left + width > slide_w or top + height > slide_h)
     if raw_off:
         score -= 0.4
+    # micro label: tiny box with 1-2 chars of text -> sequence number/bullet
+    if area_pct < _MICRO_AREA_PCT and 0 < len(text) <= _MICRO_TEXT_LEN:
+        score -= 0.5
 
     # include signals
     if getattr(shape, "is_placeholder", False):
