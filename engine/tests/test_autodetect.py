@@ -68,3 +68,22 @@ def test_autodetect_shapes_have_suggestions(labeled_deck):
         if s["is_candidate"]:
             assert s["suggested_id"]
             assert s["suggested_max_chars"] > 0
+
+
+def test_table_candidate_gets_max_rows_cols(tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    slide.shapes.add_table(3, 2, Inches(1), Inches(1), Inches(8), Inches(3))
+    p = tmp_path / "tbl.pptx"
+    prs.save(str(p))
+    det = autodetect(p.read_bytes())
+    tables = [s for s in det["slides"][0]["shapes"] if s["type"] == "table"]
+    assert tables, "table shape not detected"
+    t = tables[0]
+    assert t["is_candidate"] is True
+    assert t["suggested_max_rows"] == 3
+    assert t["suggested_max_cols"] == 2
+    # text-only fields stay zero for a table
+    assert t["suggested_max_chars"] == 0

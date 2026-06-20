@@ -2,6 +2,7 @@ import io
 from dataclasses import dataclass
 
 from pptx import Presentation
+from pptx.enum.dml import MSO_FILL
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from .shapes import _guess_type, _pct
@@ -50,6 +51,42 @@ def _first_font_pt(shape) -> float | None:
     return None
 
 
+def _has_picture_fill(shape) -> bool:
+    # Real templates often place a photo as a picture-filled freeform/autoshape,
+    # not a bare PICTURE shape.
+    try:
+        return shape.fill.type == MSO_FILL.PICTURE
+    except Exception:
+        return False
+
+
+def _contains_picture(group) -> bool:
+    for sub in getattr(group, "shapes", []):
+        try:
+            if sub.shape_type == MSO_SHAPE_TYPE.PICTURE or _has_picture_fill(sub):
+                return True
+            if sub.shape_type == MSO_SHAPE_TYPE.GROUP and _contains_picture(sub):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _is_image(shape) -> bool:
+    """True for a picture, a picture-filled shape, or a group framing one —
+    all are fillable image slots rather than decoration."""
+    if _has_picture_fill(shape):
+        return True
+    try:
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            return True
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            return _contains_picture(shape)
+    except Exception:
+        return False
+    return False
+
+
 def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
     left = shape.left or 0
     top = shape.top or 0
@@ -65,10 +102,14 @@ def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
     except Exception:
         stype = None
 
+    # A picture, picture-filled shape, or group framing one is an image slot.
+    img = _is_image(shape)
+    effective_type = "image" if img else _guess_type(shape)
+
     # exclude signals
-    if stype in _DECO_TYPES:
+    if stype in _DECO_TYPES and not img:
         score -= 0.5
-    if not getattr(shape, "has_text_frame", False) and _guess_type(shape) == "text":
+    if not getattr(shape, "has_text_frame", False) and effective_type == "text":
         score -= 0.3
     if getattr(shape, "has_text_frame", False) and not text:
         score -= 0.25
@@ -88,13 +129,13 @@ def classify_shape(shape, slide_w, slide_h) -> ShapeAssessment:
         score += 0.4
     if text and area_pct >= _MIN_AREA_PCT:
         score += 0.3
-    if _guess_type(shape) in ("table", "image") and area_pct >= _MIN_AREA_PCT:
+    if effective_type in ("table", "image") and area_pct >= _MIN_AREA_PCT:
         score += 0.2
 
     confidence = max(0.0, min(1.0, score))
     return ShapeAssessment(
         shape_id=shape.shape_id, name=shape.name or "",
-        type=_guess_type(shape), bbox_pct=bbox,
+        type=effective_type, bbox_pct=bbox,
         confidence=round(confidence, 3), is_candidate=confidence >= TAU,
         font_pt=_first_font_pt(shape),
     )
@@ -118,16 +159,22 @@ def autodetect(pptx_bytes: bytes) -> dict:
         shape_by_id = {shp.shape_id: shp for shp in slide.shapes}
         shapes = []
         for a in assessments:
-            mc = ml = 0
+            mc = ml = mr = mcols = 0
             if a.is_candidate and a.type == "text":
                 shp = shape_by_id[a.shape_id]
                 mc, ml = estimate_max_chars(shp.width or 0, shp.height or 0, a.font_pt)
+            elif a.is_candidate and a.type == "table":
+                shp = shape_by_id[a.shape_id]
+                if getattr(shp, "has_table", False):
+                    mr = len(shp.table.rows)
+                    mcols = len(shp.table.columns)
             shapes.append({
                 "shape_id": a.shape_id, "name": a.name, "type": a.type,
                 "bbox_pct": a.bbox_pct, "confidence": a.confidence,
                 "is_candidate": a.is_candidate,
                 "suggested_id": ids.get(a.shape_id, ""),
                 "suggested_max_chars": mc, "suggested_max_lines": ml,
+                "suggested_max_rows": mr, "suggested_max_cols": mcols,
                 "font_pt": a.font_pt,
             })
         slides.append({"index": i, "width_emu": sw, "height_emu": sh, "shapes": shapes})
