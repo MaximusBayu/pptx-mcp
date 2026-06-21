@@ -22,4 +22,18 @@ describe("engine client", () => {
     expect(out.pptx).toBeInstanceOf(Buffer);
     expect(out.validation).toEqual([]);
   });
+
+  it("moveShapes posts moves and returns bytes", async () => {
+    const spy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([0x50, 0x4b]), { status: 200 }) as any
+    );
+    const { moveShapes } = await import("@/lib/engine");
+    const out = await moveShapes(Buffer.from("PK"), [
+      { slide_index: 1, shape_id: 5, bbox_pct: { x: 10, y: 10, w: 20, h: 10 } },
+    ]);
+    expect(out).toBeInstanceOf(Buffer);
+    const url = (spy.mock.calls[0][0] as string);
+    expect(url).toContain("/move-shapes");
+    spy.mockRestore();
+  });
 });

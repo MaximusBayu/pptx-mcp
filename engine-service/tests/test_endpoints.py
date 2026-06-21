@@ -43,3 +43,28 @@ def test_move_shape(sample_template_dir):
                           "bbox_pct": json.dumps({"x": 10, "y": 10, "w": 40, "h": 20})})
     assert r.status_code == 200
     assert r.content[:2] == b"PK"
+
+
+def test_move_shapes_endpoint():
+    import io
+    from pptx import Presentation
+
+    def _two_slide_deck() -> bytes:
+        prs = Presentation()
+        blank = prs.slide_layouts[6]
+        for _ in range(2):
+            s = prs.slides.add_slide(blank)
+            s.shapes.add_textbox(0, 0, 914400, 914400)
+        buf = io.BytesIO()
+        prs.save(buf)
+        return buf.getvalue()
+
+    data = _two_slide_deck()
+    sid = Presentation(io.BytesIO(data)).slides[1].shapes[0].shape_id
+    moves = [{"slide_index": 1, "shape_id": sid,
+              "bbox_pct": {"x": 50, "y": 50, "w": 20, "h": 10}}]
+    r = client.post("/move-shapes",
+                    files={"file": ("d.pptx", data)},
+                    data={"moves": json.dumps(moves)})
+    assert r.status_code == 200
+    assert r.content[:2] == b"PK"

@@ -51,6 +51,21 @@ export async function moveShape(pptx: Buffer, shapeId: number, bboxPct: { x: num
   return Buffer.from(await r.arrayBuffer());
 }
 
+export type Move = {
+  slide_index: number;
+  shape_id: number;
+  bbox_pct: { x: number; y: number; w: number; h: number };
+};
+
+export async function moveShapes(pptx: Buffer, moves: Move[]): Promise<Buffer> {
+  const r = await fetch(`${BASE}/move-shapes`, {
+    method: "POST",
+    body: form(pptx, { moves: JSON.stringify(moves) }),
+  });
+  if (!r.ok) throw new EngineError("move-shapes failed");
+  return Buffer.from(await r.arrayBuffer());
+}
+
 export type AutodetectShape = {
   shape_id: number; name: string; type: string;
   bbox_pct: { x: number; y: number; w: number; h: number };

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
-from pptx_mcp.move import move_shape
+from pptx_mcp.move import move_shape, move_shapes
 from pptx_mcp.preview import libreoffice_available, preview
 from pptx_mcp.render import RenderRejected, render
 from pptx_mcp.shapes import extract_shapes
@@ -92,4 +92,10 @@ async def render_preview(file: UploadFile = File(...),
 async def move(file: UploadFile = File(...),
                shape_id: int = Form(...), bbox_pct: str = Form(...)):
     out = move_shape(await file.read(), shape_id, json.loads(bbox_pct))
+    return Response(content=out, media_type=_PPTX)
+
+
+@app.post("/move-shapes")
+async def move_many(file: UploadFile = File(...), moves: str = Form(...)):
+    out = move_shapes(await file.read(), json.loads(moves))
     return Response(content=out, media_type=_PPTX)
