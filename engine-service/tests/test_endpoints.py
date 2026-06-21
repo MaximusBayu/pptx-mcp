@@ -28,11 +28,14 @@ def test_render_deck_ok(sample_template_dir, sample_manifest):
 
 
 def test_render_deck_rejects(sample_template_dir, sample_manifest):
-    deck = {"slides": [{"slide_type": "title", "slots": {"title": "x" * 200}}]}
+    # A wrong-typed value is a fatal validation error -> 422. (Text overflow is
+    # no longer fatal: it shrinks then sentence-truncates with a non-fatal
+    # X-Overflow-Warnings header, so it is not a rejection case.)
+    deck = {"slides": [{"slide_type": "title", "slots": {"title": 123}}]}
     r = client.post("/render-deck", files=_files(sample_template_dir),
                     data={"manifest": json.dumps(sample_manifest), "deck_spec": json.dumps(deck)})
     assert r.status_code == 422
-    assert r.json()["validation"][0]["code"] == "text_overflow"
+    assert r.json()["validation"][0]["code"] == "wrong_type"
 
 
 def test_move_shape(sample_template_dir):
