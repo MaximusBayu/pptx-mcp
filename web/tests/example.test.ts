@@ -23,6 +23,10 @@ describe("example deck_spec", () => {
     expect(exampleSlotValue({ id: "x", type: "text", default: "hi" })).toBe("hi");
   });
 
+  it("prefers an explicit example over the type default", () => {
+    expect(exampleSlotValue({ id: "t", type: "text", example: "Real text" })).toBe("Real text");
+  });
+
   it("builds a deck_spec keyed by slide_type with all slots filled", () => {
     const manifest = {
       slide_types: [
