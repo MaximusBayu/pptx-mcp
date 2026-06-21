@@ -40,24 +40,32 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   // Carry the existing draft forward; geometry edits update it in place.
   const draft = (tpl.manifestJson as any).draft ?? {};
   if (Array.isArray(moves) && moves.length > 0) {
-    const base = await getObject(tpl.basePptxKey);
-    const moved = await moveShapes(base, moves);
-    await putObject(tpl.basePptxKey, moved, PPTX);
+    try {
+      const base = await getObject(tpl.basePptxKey);
+      const moved = await moveShapes(base, moves);
 
-    const { previews } = await renderBasePreviews(moved);
-    if (previews.length) {
-      const previewKeys: string[] = [];
-      for (let i = 0; i < previews.length; i++) {
-        const key = `templates/${id}/preview-${i}.png`;
-        await putObject(key, Buffer.from(previews[i], "base64"), "image/png");
-        previewKeys.push(key);
+      // Render previews BEFORE overwriting the base so a render failure
+      // leaves the stored .pptx untouched.
+      const { previews } = await renderBasePreviews(moved);
+
+      // All rendering succeeded — now persist the base deck and previews.
+      await putObject(tpl.basePptxKey, moved, PPTX);
+      if (previews.length) {
+        const previewKeys: string[] = [];
+        for (let i = 0; i < previews.length; i++) {
+          const key = `templates/${id}/preview-${i}.png`;
+          await putObject(key, Buffer.from(previews[i], "base64"), "image/png");
+          previewKeys.push(key);
+        }
+        draft.previewKeys = previewKeys;
       }
-      draft.previewKeys = previewKeys;
-    }
-    for (const mv of moves) {
-      const slide = (draft.slides ?? []).find((s: any) => s.index === mv.slide_index);
-      const sh = slide?.shapes?.find((x: any) => x.shape_id === mv.shape_id);
-      if (sh) sh.bbox_pct = mv.bbox_pct;
+      for (const mv of moves) {
+        const slide = (draft.slides ?? []).find((s: any) => s.index === mv.slide_index);
+        const sh = slide?.shapes?.find((x: any) => x.shape_id === mv.shape_id);
+        if (sh) sh.bbox_pct = mv.bbox_pct;
+      }
+    } catch {
+      return Response.json({ error: "move/render failed" }, { status: 502 });
     }
   }
 

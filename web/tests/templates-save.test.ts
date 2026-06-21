@@ -62,4 +62,12 @@ it("applies batched moves and re-renders previews on save", async () => {
   expect(res.status).toBe(200);
   expect(moveShapes).toHaveBeenCalledOnce();
   expect(renderBasePreviews).toHaveBeenCalledOnce();
+
+  // Confirm the moved bbox was persisted to the DB manifest.
+  const { prisma: p } = await import("@/lib/prisma");
+  const updateArg = (p.template.update as any).mock.calls[0][0];
+  const persistedManifest = updateArg.data.manifestJson;
+  expect(persistedManifest.draft.slides[0].shapes[0].bbox_pct).toEqual(
+    { x: 50, y: 50, w: 10, h: 10 }
+  );
 });
