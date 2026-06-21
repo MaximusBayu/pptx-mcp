@@ -1,5 +1,6 @@
 import io
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 from pptx import Presentation
@@ -101,6 +102,19 @@ def slide_description(kind: str, slot_ids: list[str]) -> str:
     repeat = " Repeat per item." if kind == "finding" else ""
     label = _KIND_LABEL.get(kind, "Content slide")
     return f"{label} — fill: {fill}.{repeat}"
+
+
+def slide_signature(slide: dict) -> tuple:
+    """A structural fingerprint of a slide's candidate shapes. Two slides with
+    the same signature are the same template pattern repeated (e.g. F1-F4
+    findings) and are flagged repeatable."""
+    cand = [s for s in slide["shapes"] if s.get("is_candidate")]
+    parts = tuple(sorted(
+        (s["type"], round((s["bbox_pct"]["w"] * s["bbox_pct"]["h"]) / 10))
+        for s in cand
+    ))
+    sids = tuple(sorted({s["suggested_id"] for s in cand if s["suggested_id"]}))
+    return (parts, sids)
 
 
 def _shape_text(shape) -> str:
@@ -268,6 +282,10 @@ def autodetect(pptx_bytes: bytes) -> dict:
             "kind": kind, "suggested_name": kind,
             "suggested_description": slide_description(kind, slot_ids),
         })
+    sigs = [slide_signature(s) for s in slides]
+    counts = Counter(sigs)
+    for s, sig in zip(slides, sigs):
+        s["repeatable"] = counts[sig] >= 2
     return {"slides": slides}
 
 

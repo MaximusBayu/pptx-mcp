@@ -144,3 +144,35 @@ def test_autodetect_slide_has_kind(labeled_deck):
     }
     assert slide["suggested_name"] == slide["kind"]
     assert slide["suggested_description"]
+
+
+def _finding_like(slide, idx):
+    from pptx.util import Inches, Pt
+    title = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
+    title.text_frame.text = f"Finding F{idx}: SQL Injection"
+    title.text_frame.paragraphs[0].runs[0].font.size = Pt(32)
+    body = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(4))
+    body.text_frame.text = "Severity: HIGH. CWE-89. Remediation steps here."
+    body.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
+
+
+def test_repeatable_marks_structural_twins(tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    # two structurally identical finding slides + one unique cover-ish slide
+    _finding_like(prs.slides.add_slide(blank), 1)
+    _finding_like(prs.slides.add_slide(blank), 2)
+    cover = prs.slides.add_slide(blank)
+    c = cover.shapes.add_textbox(Inches(2), Inches(3), Inches(6), Inches(1.5))
+    c.text_frame.text = "RISEStore VAPT Report"
+    c.text_frame.paragraphs[0].runs[0].font.size = Pt(44)
+    p = tmp_path / "rep.pptx"
+    prs.save(str(p))
+
+    out = autodetect(p.read_bytes())
+    slides = out["slides"]
+    assert slides[0]["repeatable"] is True
+    assert slides[1]["repeatable"] is True
+    assert slides[2]["repeatable"] is False
