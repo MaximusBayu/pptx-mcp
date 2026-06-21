@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 import urllib.request
 
 from PIL import Image
@@ -112,8 +113,9 @@ def _fill_image(slide, shape, value, fit: str | None = None) -> None:
 
     try:
         slide.shapes.add_picture(io.BytesIO(data), new_left, new_top, new_w, new_h)
-    except Exception:
+    except Exception as exc:
         # Fallback: create a placeholder image if the input is invalid
+        logging.getLogger(__name__).warning("image slot fill failed; inserting placeholder at box rect: %s", exc)
         buf = io.BytesIO()
         Image.new("RGB", (1, 1), (200, 200, 200)).save(buf, format="PNG")
         buf.seek(0)
