@@ -113,3 +113,34 @@ def test_slot_description_labels():
     assert slot_description("image_2") == "Image"
     assert slot_description("text_3") == "Text"
     assert slot_description("") == "Text"
+
+
+def test_slide_kind_rules():
+    from pptx_mcp.autodetect import slide_kind
+    assert slide_kind("", False, 0, 2, True) == "cover"
+    assert slide_kind("Agenda for today", False, 1, 4, False) == "agenda"
+    assert slide_kind("Executive Summary", False, 2, 3, False) == "summary"
+    assert slide_kind("Severity: CRITICAL CWE-89", False, 3, 3, False) == "finding"
+    assert slide_kind("just numbers", True, 4, 1, False) == "data"
+    assert slide_kind("Thank you!", False, 5, 1, False) == "closing"
+    assert slide_kind("Section One", False, 6, 1, False) == "section"
+    assert slide_kind("a paragraph of content here", False, 7, 4, False) == "content"
+
+
+def test_slide_description_lists_slots_and_repeat_hint():
+    from pptx_mcp.autodetect import slide_description
+    d = slide_description("finding", ["title", "severity", "description"])
+    assert "title" in d and "severity" in d and "description" in d
+    assert "Repeat per item" in d
+    assert "no slots" in slide_description("content", [])
+
+
+def test_autodetect_slide_has_kind(labeled_deck):
+    path, _ = labeled_deck
+    out = autodetect(open(path, "rb").read())
+    slide = out["slides"][0]
+    assert slide["kind"] in {
+        "cover", "agenda", "summary", "finding", "data", "closing", "section", "content"
+    }
+    assert slide["suggested_name"] == slide["kind"]
+    assert slide["suggested_description"]
