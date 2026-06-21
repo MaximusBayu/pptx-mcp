@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   canvasExtent, toCanvasPct, fromCanvasOffset, clampToExtent, rangeX, rangeY,
+  canvasHeightPx,
 } from "@/lib/canvasView";
 
 describe("canvasView", () => {
@@ -33,6 +34,27 @@ describe("canvasView", () => {
     const { dx, dy } = fromCanvasOffset({ x: 320, y: 50 }, e, { w: 640, h: 360 });
     expect(dx).toBeCloseTo(100); // half the width * rangeX(200)
     expect(dy).toBeCloseTo(13.888, 2);
+  });
+
+  it("canvasHeightPx honors slide aspect (no-bleed 16:9 -> 16:9 canvas)", () => {
+    // No bleed: extent is the slide + 2% margin on each side -> square in %-units.
+    const e = canvasExtent([], 2); // range 104 x 104
+    // 16:9 slide: height should be width / (16/9), not width (square).
+    expect(canvasHeightPx(640, e, 16 / 9)).toBeCloseTo(360, 0);
+  });
+
+  it("canvasHeightPx grows for vertical bleed but stays aspect-correct", () => {
+    // A shape bleeds to y+h = 131 -> taller extent.
+    const e = canvasExtent([{ x: 0, y: 100, w: 10, h: 31 }], 2);
+    // rangeY = 133-(-2)=135 ; rangeX = 102-(-2)=104 ; AR 16/9
+    const h = canvasHeightPx(640, e, 16 / 9);
+    expect(h).toBeCloseTo((640 * rangeY(e)) / (rangeX(e) * (16 / 9)), 3);
+    expect(h).toBeGreaterThan(360); // taller than the no-bleed case
+  });
+
+  it("canvasHeightPx falls back to 16:9 for a non-positive slideAR", () => {
+    const e = canvasExtent([], 2);
+    expect(canvasHeightPx(640, e, 0)).toBeCloseTo(canvasHeightPx(640, e, 16 / 9), 5);
   });
 
   it("clampToExtent allows off-slide but not off-canvas", () => {

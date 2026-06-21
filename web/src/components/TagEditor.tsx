@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SlotPanel, type DraftSlot } from "./SlotPanel";
 import { placementIssues, type Box } from "@/lib/placement";
 import {
-  canvasExtent, toCanvasPct, fromCanvasOffset, clampToExtent, rangeX, rangeY,
+  canvasExtent, toCanvasPct, fromCanvasOffset, clampToExtent, canvasHeightPx,
   type Extent,
 } from "@/lib/canvasView";
 import {
@@ -20,7 +20,7 @@ type Shape = {
   suggested_max_lines?: number;
   suggested_max_rows?: number; suggested_max_cols?: number;
 };
-type Slide = { index: number; shapes: Shape[] };
+type Slide = { index: number; shapes: Shape[]; width_emu?: number; height_emu?: number };
 type Slots = Record<string, DraftSlot>;
 
 export type PlacementIssues = { offSlide: string[]; overlapping: [string, string][] };
@@ -147,6 +147,12 @@ export function TagEditor({
 
   const offSlideIds = new Set(issues.offSlide);
   const frame = toCanvasPct({ x: 0, y: 0, w: 100, h: 100 }, extent);
+  // Slide aspect ratio (width:height). bbox x/w and y/h are percent of slide
+  // width vs height respectively, so the canvas must honor the slide's real
+  // aspect or the frame collapses to a square and the preview letterboxes.
+  const slideAR = slide.width_emu && slide.height_emu
+    ? slide.width_emu / slide.height_emu
+    : 16 / 9;
 
   return (
     <div className="flex gap-6">
@@ -156,7 +162,7 @@ export function TagEditor({
         ref={containerRef}
         data-testid="slide-canvas"
         className="relative w-[640px] bg-gray-100 overflow-hidden"
-        style={{ height: `${(640 * rangeY(extent)) / rangeX(extent)}px` }}
+        style={{ height: `${canvasHeightPx(640, extent, slideAR)}px` }}
       >
         {/* slide reference frame */}
         <div

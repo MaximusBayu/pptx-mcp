@@ -27,6 +27,20 @@ export function toCanvasPct(b: Box, e: Extent): Box {
   };
 }
 
+/**
+ * Pixel height of the canvas for a fixed pixel width.
+ *
+ * bbox x/w are percent of slide WIDTH and y/h are percent of slide HEIGHT —
+ * different real units. `slideAR` (= width_emu / height_emu) rescales the
+ * vertical axis so the rendered slide frame keeps the slide's true aspect
+ * ratio instead of collapsing to a square (which letterboxed the preview and
+ * drifted the overlay boxes off the slide content).
+ */
+export function canvasHeightPx(widthPx: number, e: Extent, slideAR: number): number {
+  const ar = slideAR > 0 ? slideAR : 16 / 9;
+  return (widthPx * rangeY(e)) / (rangeX(e) * ar);
+}
+
 /** Pixel drag delta -> slide-% delta, accounting for the extent zoom. */
 export function fromCanvasOffset(
   offsetPx: { x: number; y: number },
