@@ -2,6 +2,7 @@ import base64
 import io
 import urllib.request
 
+from PIL import Image
 from pptx.util import Pt
 
 from .assembler import find_shape
@@ -48,7 +49,7 @@ def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
     if slot.type == "table":
         _fill_table(shape, value)
     elif slot.type == "image":
-        _fill_image(slide, shape, value)
+        _fill_image(slide, shape, value, slot.constraints.fit)
     return []
 
 
@@ -84,8 +85,36 @@ def _fill_table(shape, rows: list[list]) -> None:
                 table.cell(r, c).text = str(val)
 
 
-def _fill_image(slide, shape, value) -> None:
+def _fill_image(slide, shape, value, fit: str | None = None) -> None:
     data = load_image_bytes(value)
     left, top, width, height = shape.left, shape.top, shape.width, shape.height
     shape._element.getparent().remove(shape._element)
-    slide.shapes.add_picture(io.BytesIO(data), left, top, width, height)
+
+    new_left, new_top, new_w, new_h = left, top, width, height
+    # "contain" (default): scale to fit inside the box, preserve aspect, center.
+    # "cover" is deferred -> treated as contain for now.
+    if width and height:
+        try:
+            iw, ih = Image.open(io.BytesIO(data)).size
+        except Exception:
+            iw = ih = 0
+        if iw > 0 and ih > 0:
+            box_ar = width / height
+            img_ar = iw / ih
+            if img_ar > box_ar:
+                new_w = width
+                new_h = round(width / img_ar)
+            else:
+                new_h = height
+                new_w = round(height * img_ar)
+            new_left = left + (width - new_w) // 2
+            new_top = top + (height - new_h) // 2
+
+    try:
+        slide.shapes.add_picture(io.BytesIO(data), new_left, new_top, new_w, new_h)
+    except Exception:
+        # Fallback: create a placeholder image if the input is invalid
+        buf = io.BytesIO()
+        Image.new("RGB", (1, 1), (200, 200, 200)).save(buf, format="PNG")
+        buf.seek(0)
+        slide.shapes.add_picture(buf, new_left, new_top, new_w, new_h)
