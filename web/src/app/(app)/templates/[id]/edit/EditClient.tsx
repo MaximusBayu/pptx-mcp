@@ -19,11 +19,10 @@ export function EditClient({ id, name, slides, previewUrls }:
 
   const handleIssues = useCallback((next: PlacementIssues) => setIssues(next), []);
 
-  async function onMove(shapeId: number, bbox: { x: number; y: number; w: number; h: number }) {
-    await fetch(`/api/templates/${id}/move-shape`, {
-      method: "POST", body: JSON.stringify({ shape_id: shapeId, bbox_pct: bbox }),
-      headers: { "Content-Type": "application/json" },
-    });
+  const [moves, setMoves] = useState<Record<string, { slide_index: number; shape_id: number; bbox_pct: { x: number; y: number; w: number; h: number } }>>({});
+
+  function onMove(slideIndex: number, shapeId: number, bbox: { x: number; y: number; w: number; h: number }) {
+    setMoves((m) => ({ ...m, [`${slideIndex}:${shapeId}`]: { slide_index: slideIndex, shape_id: shapeId, bbox_pct: bbox } }));
   }
 
   async function save() {
