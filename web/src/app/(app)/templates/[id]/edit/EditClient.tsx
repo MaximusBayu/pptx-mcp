@@ -29,12 +29,15 @@ export function EditClient({ id, name, slides, previewUrls }:
     setSaveErr("");
     setOverlapWarn("");
 
-    const warnings: string[] = [];
-    if (issues.offSlide.length > 0)
-      warnings.push(`Off-slide (intentional bleed?): ${issues.offSlide.join(", ")}`);
-    if (issues.overlapping.length > 0)
-      warnings.push(`Overlapping: ${issues.overlapping.map((p) => p.join("+")).join(", ")}`);
-    if (warnings.length) setOverlapWarn(warnings.join(" · "));
+    // Off-slide is a soft heads-up (bleed is often intentional). Overlap is not
+    // warned: layered slide designs overlap by nature, so it was pure noise.
+    // De-dupe ids and cap the list so a dense deck can't spam a wall of text.
+    const offIds = Array.from(new Set(issues.offSlide));
+    if (offIds.length > 0) {
+      const shown = offIds.slice(0, 8).join(", ");
+      const more = offIds.length > 8 ? ` +${offIds.length - 8} more` : "";
+      setOverlapWarn(`Off-slide (intentional bleed?): ${shown}${more}`);
+    }
 
     setSaveState("saving");
     try {

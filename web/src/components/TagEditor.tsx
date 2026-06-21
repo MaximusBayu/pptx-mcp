@@ -197,6 +197,9 @@ export function TagEditor({
               drag={!!onMove}
               dragMomentum={false}
               dragSnapToOrigin
+              // Instant snap on drop — the persisted left/top is the final
+              // position; no tween animating the box back to origin.
+              transition={{ duration: 0 }}
               onDragEnd={(_e, info) => handleDragEnd(slideIdx, s.shape_id, info)}
               whileHover={reduced ? undefined : { scale: 1.02 }}
               animate={selected === key ? { borderColor: "#2563eb" } : undefined}
