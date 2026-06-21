@@ -87,3 +87,29 @@ def test_table_candidate_gets_max_rows_cols(tmp_path):
     assert t["suggested_max_cols"] == 2
     # text-only fields stay zero for a table
     assert t["suggested_max_chars"] == 0
+
+
+def test_shapes_have_text_and_example(labeled_deck):
+    path, _ = labeled_deck
+    out = autodetect(open(path, "rb").read())
+    shapes = out["slides"][0]["shapes"]
+    titles = [s for s in shapes if s["suggested_id"] == "title"]
+    assert titles, "no title candidate detected"
+    t = titles[0]
+    # the title box text in the fixture is "Quarterly Business Review"
+    assert "Quarterly Business Review" in t["text"]
+    # example is the box's own text (the biggest agent win), non-empty for a tagged text slot
+    assert t["suggested_example"]
+    assert t["suggested_example"] in t["text"] or t["text"].startswith(t["suggested_example"].rstrip("…"))
+    assert t["suggested_description"] == "Slide title"
+
+
+def test_slot_description_labels():
+    from pptx_mcp.autodetect import slot_description
+    assert slot_description("title") == "Slide title"
+    assert slot_description("subtitle") == "Subtitle"
+    assert slot_description("body") == "Body text"
+    assert slot_description("table_1") == "Table data"
+    assert slot_description("image_2") == "Image"
+    assert slot_description("text_3") == "Text"
+    assert slot_description("") == "Text"

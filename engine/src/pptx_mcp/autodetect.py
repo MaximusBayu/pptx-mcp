@@ -35,6 +35,33 @@ class ShapeAssessment:
     font_pt: float | None
 
 
+_EXAMPLE_MAX = 200
+
+_DESC_BY_ID = {
+    "title": "Slide title",
+    "subtitle": "Subtitle",
+    "body": "Body text",
+}
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def slot_description(suggested_id: str) -> str:
+    """A short human label for a slot, derived from its auto-assigned id."""
+    if suggested_id in _DESC_BY_ID:
+        return _DESC_BY_ID[suggested_id]
+    if suggested_id.startswith("table"):
+        return "Table data"
+    if suggested_id.startswith("image"):
+        return "Image"
+    return "Text"
+
+
 def _shape_text(shape) -> str:
     if not getattr(shape, "has_text_frame", False):
         return ""
@@ -168,14 +195,23 @@ def autodetect(pptx_bytes: bytes) -> dict:
                 if getattr(shp, "has_table", False):
                     mr = len(shp.table.rows)
                     mcols = len(shp.table.columns)
+            shp_obj = shape_by_id[a.shape_id]
+            text_val = _truncate(_shape_text(shp_obj), _EXAMPLE_MAX)
+            sid = ids.get(a.shape_id, "")
+            example = ""
+            if a.is_candidate and a.type == "text" and text_val:
+                example = _truncate(text_val, mc if mc > 0 else _EXAMPLE_MAX)
             shapes.append({
                 "shape_id": a.shape_id, "name": a.name, "type": a.type,
                 "bbox_pct": a.bbox_pct, "confidence": a.confidence,
                 "is_candidate": a.is_candidate,
-                "suggested_id": ids.get(a.shape_id, ""),
+                "suggested_id": sid,
                 "suggested_max_chars": mc, "suggested_max_lines": ml,
                 "suggested_max_rows": mr, "suggested_max_cols": mcols,
                 "font_pt": a.font_pt,
+                "text": text_val,
+                "suggested_example": example,
+                "suggested_description": slot_description(sid),
             })
         slides.append({"index": i, "width_emu": sw, "height_emu": sh, "shapes": shapes})
     return {"slides": slides}
