@@ -58,23 +58,44 @@ def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
     warnings: list[SlotError] = []
     tf = shape.text_frame
     decision, _ = assess_text(value, slot.constraints)
+
+    # Preserve the template's styling: keep the first paragraph (its alignment)
+    # and write into its first run (its font family, size, bold/italic, color).
+    # Setting tf.text would discard all of it, left-aligning in a default font.
+    p0 = tf.paragraphs[0] if tf.paragraphs else None
+    r0 = p0.runs[0] if (p0 is not None and p0.runs) else None
+    orig_pt = r0.font.size.pt if (r0 is not None and r0.font.size is not None) else _BASE_PT
+
+    new_pt = None
     if decision == "shrink":
         floor = slot.constraints.shrink_floor_pt or _MIN_PT
-        new_pt = max(floor, _BASE_PT - _SHRINK_STEP)
+        new_pt = max(floor, orig_pt - _SHRINK_STEP)
         max_chars = slot.constraints.max_chars
         if max_chars is not None:
-            capacity = int(max_chars * (_BASE_PT / new_pt))
+            capacity = int(max_chars * (orig_pt / new_pt))
             if len(value) > capacity:
                 value, dropped = truncate_to_sentence(value, capacity)
                 if dropped:
                     warnings.append(SlotError(0, slot.id, "text_truncated",
                                               f"dropped {len(dropped)} chars to fit"))
-        tf.text = value
-        for para in tf.paragraphs:
-            for run in para.runs:
-                run.font.size = Pt(new_pt)
+
+    if r0 is not None:
+        # Write into the existing run; drop extra runs and paragraphs so the
+        # template's formatting on r0/p0 is what remains.
+        r0.text = value
+        for extra in p0.runs[1:]:
+            extra._r.getparent().remove(extra._r)
+        for extra in tf.paragraphs[1:]:
+            extra._p.getparent().remove(extra._p)
+        if new_pt is not None:
+            r0.font.size = Pt(new_pt)
     else:
+        # No run to inherit from (empty box) — fall back to plain text.
         tf.text = value
+        if new_pt is not None:
+            for para in tf.paragraphs:
+                for run in para.runs:
+                    run.font.size = Pt(new_pt)
     return warnings
 
 
