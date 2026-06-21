@@ -1,6 +1,22 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { TagEditor, slotKey } from "@/components/TagEditor";
+import { TagEditor, slotKey, buildInitialSlots } from "@/components/TagEditor";
+
+it("seeds slot description and example from shape suggestions", () => {
+  const slides = [{
+    index: 0, width_emu: 12192000, height_emu: 6858000,
+    shapes: [{
+      shape_id: 5, name: "Title", type: "text",
+      bbox_pct: { x: 5, y: 5, w: 80, h: 15 },
+      is_candidate: true, suggested_id: "title",
+      suggested_description: "Slide title", suggested_example: "Finding F1",
+    }],
+  }];
+  const slots = buildInitialSlots(slides as any);
+  const slot = slots["0:5"];
+  expect(slot.description).toBe("Slide title");
+  expect(slot.example).toBe("Finding F1");
+});
 
 const slides = [{
   index: 0, width_emu: 100, height_emu: 100,

@@ -19,8 +19,13 @@ type Shape = {
   suggested_id?: string; suggested_max_chars?: number;
   suggested_max_lines?: number;
   suggested_max_rows?: number; suggested_max_cols?: number;
+  text?: string; suggested_example?: string; suggested_description?: string;
 };
-type Slide = { index: number; shapes: Shape[]; width_emu?: number; height_emu?: number };
+type Slide = {
+  index: number; shapes: Shape[]; width_emu?: number; height_emu?: number;
+  suggested_name?: string; suggested_description?: string; repeatable?: boolean;
+};
+export type SlideMeta = { name: string; description: string; repeatable: boolean };
 type Slots = Record<string, DraftSlot>;
 
 export type PlacementIssues = { offSlide: string[]; overlapping: [string, string][] };
@@ -53,6 +58,8 @@ export function buildInitialSlots(slides: Slide[]): Slots {
           shape_id: s.shape_id, slideIndex: slide.index,
           id: s.suggested_id ?? "", name: s.name,
           type: (s.type as DraftSlot["type"]) ?? "text", constraints,
+          description: s.suggested_description ?? "",
+          example: s.suggested_example ?? "",
         };
       }
     }
@@ -61,18 +68,39 @@ export function buildInitialSlots(slides: Slide[]): Slots {
 }
 
 export function TagEditor({
-  slides, previewUrls, onChange, onMove, onIssues,
+  slides, previewUrls, onChange, onMove, onIssues, onSlideMeta,
 }: {
   slides: Slide[];
   previewUrls: string[];
   onChange: (s: Slots) => void;
   onMove?: (slideIndex: number, shapeId: number, bbox: Box) => void;
   onIssues?: (issues: PlacementIssues) => void;
+  onSlideMeta?: (slideIndex: number, meta: SlideMeta) => void;
 }) {
   const reduced = useReducedMotion();
   const containerRef = useRef<HTMLDivElement>(null);
   const [slideIdx, setSlideIdx] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+
+  const [slideMeta, setSlideMeta] = useState<Record<number, SlideMeta>>(() => {
+    const m: Record<number, SlideMeta> = {};
+    for (const sl of slides) {
+      m[sl.index] = {
+        name: sl.suggested_name ?? "",
+        description: sl.suggested_description ?? "",
+        repeatable: sl.repeatable ?? false,
+      };
+    }
+    return m;
+  });
+
+  function updateSlideMeta(idx: number, patch: Partial<SlideMeta>) {
+    setSlideMeta((m) => {
+      const next = { ...(m[idx] ?? { name: "", description: "", repeatable: false }), ...patch };
+      onSlideMeta?.(idx, next);
+      return { ...m, [idx]: next };
+    });
+  }
 
   const [hist, setHist] = useState<History<EditorState>>(() =>
     initHistory({ slots: buildInitialSlots(slides), bboxOverrides: {} })
@@ -211,6 +239,25 @@ export function TagEditor({
       </div>
 
       <div className="w-72 space-y-3">
+        <div className="border rounded p-3 space-y-2">
+          <p className="text-xs font-medium text-neutral-500">Slide settings</p>
+          <label className="block text-sm">Name
+            <input aria-label="Slide name" className="w-full border p-1 rounded"
+              value={slideMeta[slideIdx]?.name ?? ""}
+              onChange={(e) => updateSlideMeta(slideIdx, { name: e.target.value })} />
+          </label>
+          <label className="block text-sm">Description
+            <input aria-label="Slide description" className="w-full border p-1 rounded"
+              value={slideMeta[slideIdx]?.description ?? ""}
+              onChange={(e) => updateSlideMeta(slideIdx, { description: e.target.value })} />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" aria-label="Repeat per item"
+              checked={slideMeta[slideIdx]?.repeatable ?? false}
+              onChange={(e) => updateSlideMeta(slideIdx, { repeatable: e.target.checked })} />
+            Repeat per item
+          </label>
+        </div>
         <div className="flex gap-2">
           <button aria-label="Undo" disabled={!canUndo(hist)}
             onClick={() => setHist((h) => undo(h))}

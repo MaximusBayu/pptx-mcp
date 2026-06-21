@@ -2,7 +2,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TagEditor, type PlacementIssues } from "@/components/TagEditor";
+import { TagEditor, type PlacementIssues, type SlideMeta } from "@/components/TagEditor";
 import type { DraftSlot } from "@/components/SlotPanel";
 import { PageTransition } from "@/lib/motion/PageTransition";
 
@@ -18,6 +18,11 @@ export function EditClient({ id, name, slides, previewUrls }:
   const [issues, setIssues] = useState<PlacementIssues>({ offSlide: [], overlapping: [] });
 
   const handleIssues = useCallback((next: PlacementIssues) => setIssues(next), []);
+
+  const [slideMeta, setSlideMeta] = useState<Record<number, SlideMeta>>({});
+  function onSlideMeta(slideIndex: number, meta: SlideMeta) {
+    setSlideMeta((m) => ({ ...m, [slideIndex]: meta }));
+  }
 
   const [moves, setMoves] = useState<Record<string, { slide_index: number; shape_id: number; bbox_pct: { x: number; y: number; w: number; h: number } }>>({});
 
@@ -41,12 +46,23 @@ export function EditClient({ id, name, slides, previewUrls }:
 
     setSaveState("saving");
     try {
-      const slideTypes = slides.map((_sl, idx) => ({
-        id: `slide_${idx}`, name: `Slide ${idx + 1}`, source_slide_index: idx,
-        // Use slot.slideIndex (the composite-key slide) instead of shape_id match to
-        // avoid cross-slide collision when two slides share the same shape_id value.
-        slots: Object.values(slots).filter((s) => s.slideIndex === idx && s.id),
-      }));
+      const slideTypes = slides.map((_sl, idx) => {
+        const meta = slideMeta[idx];
+        return {
+          id: `slide_${idx}`,
+          name: meta?.name ?? "",
+          description: meta?.description ?? "",
+          repeatable: meta?.repeatable ?? false,
+          source_slide_index: idx,
+          slots: Object.values(slots)
+            .filter((s) => s.slideIndex === idx && s.id)
+            .map((s) => ({
+              id: s.id, name: s.name, type: s.type, shape_id: s.shape_id,
+              constraints: s.constraints,
+              description: s.description ?? "", example: s.example ?? "",
+            })),
+        };
+      });
       const res = await fetch(`/api/templates/${id}`, {
         method: "PUT",
         body: JSON.stringify({ name, slideTypes, moves: Object.values(moves) }),
@@ -98,6 +114,7 @@ export function EditClient({ id, name, slides, previewUrls }:
           onChange={setSlots}
           onMove={onMove}
           onIssues={handleIssues}
+          onSlideMeta={onSlideMeta}
         />
         <div className="flex items-center gap-3 flex-wrap">
           <motion.button
