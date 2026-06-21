@@ -19,7 +19,17 @@ export function EditClient({ id, name, slides, previewUrls }:
 
   const handleIssues = useCallback((next: PlacementIssues) => setIssues(next), []);
 
-  const [slideMeta, setSlideMeta] = useState<Record<number, SlideMeta>>({});
+  const [slideMeta, setSlideMeta] = useState<Record<number, SlideMeta>>(() => {
+    const m: Record<number, SlideMeta> = {};
+    for (const sl of slides) {
+      m[sl.index] = {
+        name: sl.suggested_name ?? "",
+        description: sl.suggested_description ?? "",
+        repeatable: sl.repeatable ?? false,
+      };
+    }
+    return m;
+  });
   function onSlideMeta(slideIndex: number, meta: SlideMeta) {
     setSlideMeta((m) => ({ ...m, [slideIndex]: meta }));
   }
