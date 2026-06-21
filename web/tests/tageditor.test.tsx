@@ -11,7 +11,7 @@ const slides = [{
 describe("TagEditor", () => {
   it("renders an overlay box per shape", () => {
     render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={() => {}} />);
-    expect(screen.getByRole("button", { name: /Title/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /shape Title/ })).toBeInTheDocument();
   });
 
   it("clips the slide canvas so off-slide shapes can't overlap controls below", () => {
@@ -32,7 +32,7 @@ describe("TagEditor", () => {
   it("selecting a shape lets you set a slot id", () => {
     const onChange = vi.fn();
     render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: /Title/ }));
+    fireEvent.click(screen.getByRole("button", { name: /shape Title/ }));
     fireEvent.change(screen.getByLabelText("Slot id"), { target: { value: "title" } });
     expect(onChange).toHaveBeenCalled();
     const last = onChange.mock.calls.at(-1)![0];
@@ -49,7 +49,7 @@ describe("TagEditor", () => {
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
       { left: 0, top: 0, width: 640, height: 360, right: 640, bottom: 360, x: 0, y: 0, toJSON() {} } as DOMRect
     );
-    const box = screen.getByRole("button", { name: /Title/ });
+    const box = screen.getByRole("button", { name: /shape Title/ });
     // framer-motion's onDragEnd does not fire from synthetic pointer events under
     // jsdom (its gesture recogniser requires real pointer capture). Per the brief,
     // we invoke the drag handler directly via the React fiber's onDragEnd prop,

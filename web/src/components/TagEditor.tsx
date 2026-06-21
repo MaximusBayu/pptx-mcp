@@ -169,7 +169,10 @@ export function TagEditor({
           )}
         </div>
 
-        {slide.shapes.map((s) => {
+        {[...slide.shapes]
+          .sort((a, b) =>
+            (b.bbox_pct.w * b.bbox_pct.h) - (a.bbox_pct.w * a.bbox_pct.h))
+          .map((s) => {
           const key = slotKey(slideIdx, s.shape_id);
           const slot = hist.present.slots[key];
           const tagged = Boolean(slot?.id);
@@ -214,6 +217,24 @@ export function TagEditor({
               {i + 1}
             </button>
           ))}
+        </div>
+        <div className="border rounded p-2 space-y-1 max-h-48 overflow-auto">
+          <p className="text-xs font-medium text-neutral-500">Layers</p>
+          {slide.shapes.map((s) => {
+            const key = slotKey(slideIdx, s.shape_id);
+            const tagged = Boolean(hist.present.slots[key]?.id);
+            return (
+              <button
+                key={s.shape_id}
+                aria-label={`layer ${s.name}`}
+                onClick={() => setSelected(key)}
+                className={`flex w-full items-center gap-2 px-2 py-1 text-left text-sm rounded hover:bg-neutral-100 ${selected === key ? "bg-neutral-100" : ""}`}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full ${tagged ? "bg-matcha-500" : "bg-neutral-300"}`} />
+                <span className="truncate">{s.name}</span>
+              </button>
+            );
+          })}
         </div>
         {selected != null && (() => {
           const selSlot = hist.present.slots[selected];
