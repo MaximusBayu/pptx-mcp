@@ -40,3 +40,9 @@ def test_table_reject_rows():
     d, msg = assess_table([[1]] * 5, Constraints(max_rows=3, max_cols=3))
     assert d == "reject"
     assert "row" in msg.lower()
+
+
+def test_table_reject_message_has_numbers():
+    d, msg = assess_table([[1]] * 9, Constraints(max_rows=5, max_cols=3))
+    assert d == "reject"
+    assert "5" in msg and "9" in msg
