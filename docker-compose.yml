@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pptx
+      POSTGRES_PASSWORD: pptx
+      POSTGRES_DB: pptx
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pptx"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+
+  createbucket:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set m http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      /usr/bin/mc mb -p m/pptx || true;
+      "
+
+  engine-service:
+    build: { context: ., dockerfile: engine-service/Dockerfile }
+    ports: ["8000:8000"]
+
+  web:
+    build: { context: ., dockerfile: web/Dockerfile }
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      engine-service: { condition: service_started }
+      createbucket: { condition: service_completed_successfully }
+    ports: ["3000:3000"]
+
+  mcp-server:
+    build: { context: ., dockerfile: mcp-server/Dockerfile }
+    env_file: .env
+    depends_on: [web]

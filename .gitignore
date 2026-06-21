@@ -1,0 +1,54 @@
+# ---- Secrets / config ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+credentials.json
+service-account*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Node / Next.js (phase 2) ----
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Generated render artifacts ----
+# rendered decks, preview PNGs, and uploaded user content are runtime output, not source
+output/
+previews/
+uploads/
+tmp/
+*.tmp
+
+# ---- OS / editor junk ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- Local data stores ----
+*.sqlite
+*.sqlite3
+*.db
+.playwright*
