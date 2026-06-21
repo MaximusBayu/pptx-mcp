@@ -29,20 +29,12 @@ export function EditClient({ id, name, slides, previewUrls }:
     setSaveErr("");
     setOverlapWarn("");
 
-    // Hard-block: any slot off-slide
-    if (issues.offSlide.length > 0) {
-      setSaveErr(
-        `Move these slots back on-slide before saving: ${issues.offSlide.join(", ")}`
-      );
-      return;
-    }
-
-    // Soft warning: overlapping slots — show but still allow save to proceed
-    if (issues.overlapping.length > 0) {
-      setOverlapWarn(
-        `Overlapping slots: ${issues.overlapping.map((p) => p.join("+")).join(", ")}`
-      );
-    }
+    const warnings: string[] = [];
+    if (issues.offSlide.length > 0)
+      warnings.push(`Off-slide (intentional bleed?): ${issues.offSlide.join(", ")}`);
+    if (issues.overlapping.length > 0)
+      warnings.push(`Overlapping: ${issues.overlapping.map((p) => p.join("+")).join(", ")}`);
+    if (warnings.length) setOverlapWarn(warnings.join(" · "));
 
     setSaveState("saving");
     try {
@@ -54,7 +46,7 @@ export function EditClient({ id, name, slides, previewUrls }:
       }));
       const res = await fetch(`/api/templates/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ name, slideTypes }),
+        body: JSON.stringify({ name, slideTypes, moves: Object.values(moves) }),
         headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) {
@@ -72,7 +64,6 @@ export function EditClient({ id, name, slides, previewUrls }:
   }
 
   const taggedCount = Object.values(slots).filter((s) => s.id).length;
-  const hasOffSlide = issues.offSlide.length > 0;
 
   return (
     <PageTransition>
@@ -109,7 +100,7 @@ export function EditClient({ id, name, slides, previewUrls }:
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={save}
-            disabled={saveState !== "idle" || hasOffSlide}
+            disabled={saveState !== "idle"}
             className="btn-primary disabled:opacity-50"
           >
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save template"}

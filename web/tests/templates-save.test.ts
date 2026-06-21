@@ -36,3 +36,30 @@ describe("save manifest", () => {
     expect(saved.slide_types[0].slots[0].target.shape_id).toBe(5);
   });
 });
+
+it("applies batched moves and re-renders previews on save", async () => {
+  vi.resetModules();
+  vi.doMock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: "u1" } })) }));
+  vi.doMock("@/lib/prisma", () => ({
+    prisma: { template: {
+      findUnique: vi.fn(async () => ({ id: "t1", ownerId: "u1", basePptxKey: "base.pptx", manifestJson: { draft: { slides: [{ index: 0, shapes: [{ shape_id: 5, bbox_pct: { x: 0, y: 0, w: 10, h: 10 } }] }] } } })),
+      update: vi.fn(async () => ({})),
+    } },
+  }));
+  const moveShapes = vi.fn(async () => Buffer.from("PK2"));
+  const renderBasePreviews = vi.fn(async () => ({ previews: ["aGk="] }));
+  vi.doMock("@/lib/engine", () => ({ moveShapes, renderBasePreviews, EngineError: class extends Error {} }));
+  const putObject = vi.fn(async (k: string) => k);
+  vi.doMock("@/lib/s3", () => ({ getObject: vi.fn(async () => Buffer.from("PK")), putObject }));
+
+  const { PUT } = await import("@/app/api/templates/[id]/route");
+  const body = {
+    name: "T", slideTypes: [],
+    moves: [{ slide_index: 0, shape_id: 5, bbox_pct: { x: 50, y: 50, w: 10, h: 10 } }],
+  };
+  const req = new Request("http://x", { method: "PUT", body: JSON.stringify(body) });
+  const res = await PUT(req, { params: Promise.resolve({ id: "t1" }) });
+  expect(res.status).toBe(200);
+  expect(moveShapes).toHaveBeenCalledOnce();
+  expect(renderBasePreviews).toHaveBeenCalledOnce();
+});
