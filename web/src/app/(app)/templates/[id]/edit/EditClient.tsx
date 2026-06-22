@@ -1,16 +1,36 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TagEditor, type PlacementIssues, type SlideMeta } from "@/components/TagEditor";
+import { UploadProgress } from "@/components/UploadProgress";
 import type { DraftSlot } from "@/components/SlotPanel";
 import { PageTransition } from "@/lib/motion/PageTransition";
 
 type SaveState = "idle" | "saving" | "saved";
 
-export function EditClient({ id, name, slides, previewUrls }:
-  { id: string; name: string; slides: any[]; previewUrls: string[] }) {
+export function EditClient({ id, name, slides, previewUrls, previewsPending }:
+  { id: string; name: string; slides: any[]; previewUrls: string[]; previewsPending?: boolean }) {
   const router = useRouter();
+  const [urls, setUrls] = useState<string[]>(previewUrls);
+  const [renderState, setRenderState] = useState<"idle" | "rendering" | "error">(
+    previewsPending ? "rendering" : "idle",
+  );
+  const renderPreviews = useCallback(async () => {
+    setRenderState("rendering");
+    try {
+      const r = await fetch(`/api/templates/${id}/base-previews`, { method: "POST" });
+      if (!r.ok) throw new Error("render failed");
+      const data = await r.json();
+      setUrls(data.previewUrls ?? []);
+      setRenderState("idle");
+    } catch {
+      setRenderState("error");
+    }
+  }, [id]);
+  useEffect(() => {
+    if (previewsPending) renderPreviews();
+  }, [previewsPending, renderPreviews]);
   const [slots, setSlots] = useState<Record<string, DraftSlot>>({});
   const [saveErr, setSaveErr] = useState("");
   const [overlapWarn, setOverlapWarn] = useState("");
@@ -119,14 +139,23 @@ export function EditClient({ id, name, slides, previewUrls }:
               : `${taggedCount} slot${taggedCount === 1 ? "" : "s"} tagged.`}
           </p>
         </div>
-        <TagEditor
-          slides={slides}
-          previewUrls={previewUrls}
-          onChange={setSlots}
-          onMove={onMove}
-          onIssues={handleIssues}
-          onSlideMeta={onSlideMeta}
-        />
+        {renderState === "rendering" ? (
+          <UploadProgress stage="Rendering previews…" />
+        ) : renderState === "error" ? (
+          <div className="space-y-2">
+            <p className="text-red-600 text-sm">Preview render failed.</p>
+            <button onClick={renderPreviews} className="btn-primary">Retry</button>
+          </div>
+        ) : (
+          <TagEditor
+            slides={slides}
+            previewUrls={urls}
+            onChange={setSlots}
+            onMove={onMove}
+            onIssues={handleIssues}
+            onSlideMeta={onSlideMeta}
+          />
+        )}
         <div className="flex items-center gap-3 flex-wrap">
           <motion.button
             whileTap={{ scale: 0.97 }}
