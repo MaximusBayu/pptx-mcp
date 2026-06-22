@@ -12,7 +12,6 @@ from .models import Slot, SlotError
 from .textfit import fit_text, truncate_to_sentence
 
 _BASE_PT = 24.0
-_SHRINK_STEP = 4.0
 _MIN_PT = 12.0
 _IMG_MAX_BYTES = 20 * 1024 * 1024
 
