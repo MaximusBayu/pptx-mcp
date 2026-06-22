@@ -36,6 +36,23 @@ describe("save manifest", () => {
     expect(saved.slide_types[0].slots[0].target.shape_id).toBe(5);
   });
 
+  it("persists slide kind, falling back to the draft", async () => {
+    (auth as any).mockResolvedValue({ user: { id: "u1" } });
+    (prisma.template.findUnique as any).mockResolvedValue({
+      id: "t1", ownerId: "u1",
+      manifestJson: { draft: { slides: [{ index: 0, kind: "finding", suggested_name: "finding", shapes: [] }] } },
+    });
+    (prisma.template.update as any).mockResolvedValue({});
+    const body = {
+      name: "K",
+      slideTypes: [{ id: "title", source_slide_index: 0, kind: "", slots: [{ id: "title", name: "T", type: "text", shape_id: 5 }] }],
+    };
+    const r = await PUT(put(body), ctx);
+    expect(r.status).toBe(200);
+    const saved = (prisma.template.update as any).mock.calls[0][0].data.manifestJson;
+    expect(saved.slide_types[0].kind).toBe("finding");
+  });
+
   it("persists slide repeatable + slot description/example, falling back to draft", async () => {
     (auth as any).mockResolvedValue({ user: { id: "u1" } });
     (prisma.template.findUnique as any).mockResolvedValue({

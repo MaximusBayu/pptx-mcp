@@ -60,6 +60,7 @@ export function EditClient({ id, name, slides, previewUrls }:
         const meta = slideMeta[idx];
         return {
           id: `slide_${idx}`,
+          kind: (_sl as any)?.kind ?? "",
           name: meta?.name ?? "",
           description: meta?.description ?? "",
           repeatable: meta?.repeatable ?? false,

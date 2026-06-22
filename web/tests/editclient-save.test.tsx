@@ -45,6 +45,7 @@ const slides = [
     suggested_name: "finding",
     suggested_description: "Finding slide",
     repeatable: true,
+    kind: "finding",
     width_emu: 12192000,
     height_emu: 6858000,
   },
@@ -92,5 +93,6 @@ describe("EditClient seed from autodetect", () => {
     expect(capturedBody.slideTypes).toHaveLength(1);
     expect(capturedBody.slideTypes[0].repeatable).toBe(true);
     expect(capturedBody.slideTypes[0].name).toBe("finding");
+    expect(capturedBody.slideTypes[0].kind).toBe("finding");
   });
 });

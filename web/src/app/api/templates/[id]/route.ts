@@ -35,6 +35,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     const ds = draftSlide(st.source_slide_index);
     return {
       id: st.id,
+      kind: st.kind || ds?.kind || ds?.suggested_name || "",
       name: st.name || ds?.suggested_name || `Slide ${(st.source_slide_index ?? 0) + 1}`,
       description: st.description || ds?.suggested_description || "",
       repeatable: st.repeatable ?? ds?.repeatable ?? false,
