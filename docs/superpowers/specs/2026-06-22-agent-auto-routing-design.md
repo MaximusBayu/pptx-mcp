@@ -98,9 +98,15 @@ structureScore − repetitionPenalty)`, where:
    sync.
 
 2. **Token overlap (`overlapScore`)** — lowercase-tokenize `content` and the
-   slide's descriptive text (`st.name` + `st.description` + each slot's `id`,
-   `description`, `example`). Score = overlap count / a normalizing constant,
-   capped (e.g. ≤ 0.3). Catches matches the keyword table misses.
+   slide's descriptive text: `st.name` + each slot's `id`, `description`, and
+   `example`. Score = overlap count / a normalizing constant, capped (e.g.
+   ≤ 0.3). Catches matches the keyword table misses.
+   `st.description` is **deliberately excluded** from this source: it is
+   synthesized by the engine's `slide_description(kind, slot_ids)` (a templated
+   sentence = kind label + slot ids) or hand-edited by the owner. Its tokens are
+   mostly the kind label and slot ids, which `kindScore` and the slot-id overlap
+   already capture — including it would double-count those signals. Routing
+   leans on real per-slot content instead.
 
 3. **Structural fit (`structureScore`)** — cheap shape heuristics on `content`:
    - looks tabular (≥ 2 lines containing a tab / 2+ spaces / `|`, or many
