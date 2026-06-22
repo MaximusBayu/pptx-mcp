@@ -37,6 +37,13 @@ def render_preview(template_id: str, deck_spec: dict) -> dict:
     return r.json()
 
 
+def suggest_layout(template_id: str, content: str, used: dict | None = None) -> dict:
+    r = httpx.post(f"{_base()}/api/mcp/templates/{template_id}/suggest-layout",
+                   headers=_headers(), json={"content": content, "used": used or {}}, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
 def build_server():
     from fastmcp import FastMCP
     mcp = FastMCP("pptx-mcp")
@@ -79,6 +86,19 @@ def build_server():
         Use this to eyeball layout before render_deck_tool produces the final file.
         """
         return render_preview(template_id, deck_spec)
+
+    @mcp.tool()
+    def suggest_layout_tool(template_id: str, content: str, used: dict | None = None) -> dict:
+        """Rank which slide_type best fits a chunk of source content.
+
+        Pass ONE logical section at a time as `content`. Returns ranked
+        candidates, each with slide_type, name, repeatable, score, and a reason.
+        Pass `used` — a {slide_type_id: count} tally of what you have already
+        placed — to get variety: non-repeatable layouts are penalized as they
+        repeat, while repeatable layouts are exempt (reuse them once per item,
+        e.g. one finding slide per finding).
+        """
+        return suggest_layout(template_id, content, used)
 
     return mcp
 
