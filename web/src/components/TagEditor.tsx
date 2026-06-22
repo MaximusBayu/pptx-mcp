@@ -12,6 +12,7 @@ import {
   initHistory, pushState, undo, redo, canUndo, canRedo,
   type History,
 } from "@/lib/editorHistory";
+import { estimateMaxChars } from "@/lib/charfit";
 
 const MIN_PCT = 2;
 
@@ -34,6 +35,7 @@ type Shape = {
   suggested_max_lines?: number;
   suggested_max_rows?: number; suggested_max_cols?: number;
   text?: string; suggested_example?: string; suggested_description?: string;
+  font_pt?: number;
 };
 type Slide = {
   index: number; shapes: Shape[]; width_emu?: number; height_emu?: number;
@@ -348,22 +350,32 @@ export function TagEditor({
           })}
         </div>
         {selected != null && (() => {
+          const [siStr, shStr] = selected.split(":");
+          const si = Number(siStr); const shId = Number(shStr);
+          const sh = slides[si]?.shapes.find((x) => x.shape_id === shId);
+          const liveBox = gesture?.key === selected ? gesture.live : bboxFor(si, shId);
           const selSlot = hist.present.slots[selected];
+          const type = (selSlot?.type ?? (sh?.type as DraftSlot["type"]) ?? "text");
+          const estimate = type === "text"
+            ? estimateMaxChars(
+                liveBox.w, liveBox.h,
+                slides[si]?.width_emu ?? 12192000, slides[si]?.height_emu ?? 6858000,
+                sh?.font_pt,
+              )
+            : undefined;
           if (!selSlot) {
-            const [siStr, shStr] = selected.split(":");
-            const si = Number(siStr); const shId = Number(shStr);
-            const sh = slides[si]?.shapes.find((x) => x.shape_id === shId);
             return (
               <SlotPanel
                 slot={{
                   shape_id: shId, slideIndex: si, id: "", name: sh?.name ?? "",
                   type: (sh?.type as DraftSlot["type"]) ?? "text", constraints: {},
                 }}
+                charEstimate={estimate}
                 onChange={updateSlot}
               />
             );
           }
-          return <SlotPanel slot={selSlot} onChange={updateSlot} />;
+          return <SlotPanel slot={selSlot} charEstimate={estimate} onChange={updateSlot} />;
         })()}
       </div>
     </div>
