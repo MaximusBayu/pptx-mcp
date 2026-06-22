@@ -4,12 +4,12 @@ import logging
 import urllib.request
 
 from PIL import Image
-from pptx.util import Pt
+from pptx.util import Length, Pt
 
 from .assembler import find_shape
-from .fit import assess_text
+from .autodetect import LINE_H
 from .models import Slot, SlotError
-from .textfit import truncate_to_sentence
+from .textfit import fit_text, truncate_to_sentence
 
 _BASE_PT = 24.0
 _SHRINK_STEP = 4.0
@@ -54,48 +54,61 @@ def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
     return []
 
 
+def _resolve_spacing(p0, orig_pt) -> float:
+    # python-pptx line_spacing is None, a float multiple, or a Length (fixed
+    # distance). Resolve to a multiple. Length subclasses int, so check it first.
+    ls = p0.line_spacing if p0 is not None else None
+    if isinstance(ls, Length):
+        return max(0.5, min(3.0, ls.pt / orig_pt))
+    if isinstance(ls, (int, float)) and ls > 0:
+        return float(ls)
+    return LINE_H
+
+
 def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
     warnings: list[SlotError] = []
     tf = shape.text_frame
-    decision, _ = assess_text(value, slot.constraints)
+    tf.word_wrap = True
 
     # Preserve the template's styling: keep the first paragraph (its alignment)
     # and write into its first run (its font family, size, bold/italic, color).
-    # Setting tf.text would discard all of it, left-aligning in a default font.
     p0 = tf.paragraphs[0] if tf.paragraphs else None
     r0 = p0.runs[0] if (p0 is not None and p0.runs) else None
     orig_pt = r0.font.size.pt if (r0 is not None and r0.font.size is not None) else _BASE_PT
 
-    new_pt = None
-    if decision == "shrink":
-        floor = slot.constraints.shrink_floor_pt or _MIN_PT
-        new_pt = max(floor, orig_pt - _SHRINK_STEP)
-        max_chars = slot.constraints.max_chars
-        if max_chars is not None:
-            capacity = int(max_chars * (orig_pt / new_pt))
-            if len(value) > capacity:
-                value, dropped = truncate_to_sentence(value, capacity)
-                if dropped:
-                    warnings.append(SlotError(0, slot.id, "text_truncated",
-                                              f"dropped {len(dropped)} chars to fit"))
+    base_spacing = _resolve_spacing(p0, orig_pt)
+    floor_pt = slot.constraints.shrink_floor_pt or _MIN_PT
+    res = fit_text(value, shape.width or 0, shape.height or 0, orig_pt, floor_pt, base_spacing)
+    value = res.value
+    dropped = res.dropped
+
+    # Preserve the existing hard max_chars cap on top of the geometric fit.
+    max_chars = slot.constraints.max_chars
+    if max_chars is not None and len(value) > max_chars:
+        value, extra = truncate_to_sentence(value, max_chars)
+        dropped = (dropped + extra) if dropped else extra
+
+    if dropped:
+        warnings.append(SlotError(0, slot.id, "text_truncated",
+                                  f"dropped {len(dropped)} chars to fit"))
 
     if r0 is not None:
         # Write into the existing run; drop extra runs and paragraphs so the
         # template's formatting on r0/p0 is what remains.
         r0.text = value
-        for extra in p0.runs[1:]:
-            extra._r.getparent().remove(extra._r)
-        for extra in tf.paragraphs[1:]:
-            extra._p.getparent().remove(extra._p)
-        if new_pt is not None:
-            r0.font.size = Pt(new_pt)
+        for extra_run in p0.runs[1:]:
+            extra_run._r.getparent().remove(extra_run._r)
+        for extra_para in tf.paragraphs[1:]:
+            extra_para._p.getparent().remove(extra_para._p)
+        r0.font.size = Pt(res.font_pt)
+        p0.line_spacing = res.line_spacing
     else:
         # No run to inherit from (empty box) — fall back to plain text.
         tf.text = value
-        if new_pt is not None:
-            for para in tf.paragraphs:
-                for run in para.runs:
-                    run.font.size = Pt(new_pt)
+        for para in tf.paragraphs:
+            para.line_spacing = res.line_spacing
+            for run in para.runs:
+                run.font.size = Pt(res.font_pt)
     return warnings
 
 

@@ -13,15 +13,32 @@ def test_fill_text(sample_template_dir):
     assert shp.text_frame.text == "Hello World"
 
 
-def test_fill_text_shrinks_font(sample_template_dir):
+def test_fill_text_sets_word_wrap_and_preserves_styling(sample_template_dir):
     tpl = load_template(sample_template_dir)
     prs = assemble([0], tpl)
-    slot = tpl.slide_type("title").slot("title")  # max 40, floor 16
-    fill_slot(prs.slides[0], slot, "x" * 45)      # shrink range
+    slot = tpl.slide_type("title").slot("title")
     shp = find_shape(prs.slides[0], slot.shape_id)
-    size = shp.text_frame.paragraphs[0].runs[0].font.size
-    assert size is not None and size < Pt(24)
-    assert size >= Pt(16)
+    before_name = shp.text_frame.paragraphs[0].runs[0].font.name
+
+    fill_slot(prs.slides[0], slot, "A reasonably long heading that should wrap and be fit to its box")
+
+    tf = shp.text_frame
+    assert tf.word_wrap is True
+    p0 = tf.paragraphs[0]
+    # Font name (family) preserved on the surviving run.
+    assert p0.runs[0].font.name == before_name
+    # Line spacing is resolved to a numeric multiple and never below the floor.
+    from pptx_mcp.textfit import LINE_SPACING_FLOOR
+    assert isinstance(p0.line_spacing, float)
+    assert p0.line_spacing >= LINE_SPACING_FLOOR
+
+
+def test_fill_text_no_warning_when_it_fits(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    prs = assemble([0], tpl)
+    slot = tpl.slide_type("title").slot("title")
+    warnings = fill_slot(prs.slides[0], slot, "Short")
+    assert not any(w.code == "text_truncated" for w in warnings)
 
 
 def test_fill_table(sample_template_dir):
