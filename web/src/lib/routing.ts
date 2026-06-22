@@ -74,7 +74,7 @@ export function scoreLayouts(
       ]),
     ]);
     let overlap = 0;
-    for (const t of contentTokens) if (slideTokens.has(t)) overlap++;
+    contentTokens.forEach((t) => { if (slideTokens.has(t)) overlap++; });
     const overlapScore = Math.min(0.3, overlap * 0.05);
     if (overlapScore > 0) reasons.push(`shares terms with ${st.name || st.id}`);
 
