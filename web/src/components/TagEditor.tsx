@@ -1,5 +1,5 @@
 "use client";
-import { motion, useReducedMotion, type PanInfo } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SlotPanel, type DraftSlot } from "./SlotPanel";
 import { placementIssues, type Box } from "@/lib/placement";
@@ -7,10 +7,13 @@ import {
   canvasExtent, toCanvasPct, fromCanvasOffset, clampToExtent, canvasHeightPx,
   type Extent,
 } from "@/lib/canvasView";
+import { applyGesture, type Handle } from "@/lib/gesture";
 import {
   initHistory, pushState, undo, redo, canUndo, canRedo,
   type History,
 } from "@/lib/editorHistory";
+
+const MIN_PCT = 2;
 
 type Shape = {
   shape_id: number; name: string; type: string;
@@ -158,19 +161,48 @@ export function TagEditor({
     setHist((h) => pushState(h, { ...h.present, slots: { ...h.present.slots, [key]: slot } }));
   }
 
-  function handleDragEnd(slideIndex: number, shapeId: number, info: PanInfo) {
+  const [gesture, setGesture] = useState<{
+    key: string; slideIndex: number; shapeId: number; handle: Handle;
+    startBox: Box; startPt: { x: number; y: number }; live: Box; moved: boolean;
+  } | null>(null);
+
+  function gestureStart(e: React.PointerEvent, slideIndex: number, shapeId: number, handle: Handle) {
+    if (!onMove) return;
+    if (handle !== "move") e.stopPropagation();
+    const startBox = bboxFor(slideIndex, shapeId);
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch { /* jsdom */ }
+    setGesture({
+      key: slotKey(slideIndex, shapeId), slideIndex, shapeId, handle,
+      startBox, startPt: { x: e.clientX, y: e.clientY }, live: startBox, moved: false,
+    });
+  }
+
+  function gestureMove(e: React.PointerEvent) {
+    if (!gesture) return;
     const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect || !onMove) return;
+    if (!rect) return;
     const { dx, dy } = fromCanvasOffset(
-      { x: info.offset.x, y: info.offset.y }, extent, { w: rect.width, h: rect.height }
+      { x: e.clientX - gesture.startPt.x, y: e.clientY - gesture.startPt.y },
+      extent, { w: rect.width, h: rect.height }
     );
-    const existing = bboxFor(slideIndex, shapeId);
-    const moved = clampToExtent({ ...existing, x: existing.x + dx, y: existing.y + dy }, extent);
-    const key = slotKey(slideIndex, shapeId);
-    setHist((h) => pushState(h, {
-      ...h.present, bboxOverrides: { ...h.present.bboxOverrides, [key]: moved },
-    }));
-    onMove(slideIndex, shapeId, moved);
+    const moved = gesture.moved
+      || Math.abs(e.clientX - gesture.startPt.x) > 3
+      || Math.abs(e.clientY - gesture.startPt.y) > 3;
+    const live = clampToExtent(applyGesture(gesture.handle, gesture.startBox, { dx, dy }, MIN_PCT), extent);
+    setGesture({ ...gesture, live, moved });
+  }
+
+  function gestureEnd() {
+    if (!gesture) return;
+    if (gesture.moved) {
+      const key = gesture.key;
+      const committed = gesture.live;
+      setHist((h) => pushState(h, {
+        ...h.present, bboxOverrides: { ...h.present.bboxOverrides, [key]: committed },
+      }));
+      onMove?.(gesture.slideIndex, gesture.shapeId, committed);
+    }
+    setGesture(null);
   }
 
   const offSlideIds = new Set(issues.offSlide);
@@ -211,28 +243,28 @@ export function TagEditor({
           const slot = hist.present.slots[key];
           const tagged = Boolean(slot?.id);
           const conf = s.confidence ?? (tagged ? 1 : 0);
-          const cv = toCanvasPct(bboxFor(slideIdx, s.shape_id), extent);
+          const liveBox = gesture?.key === key ? gesture.live : bboxFor(slideIdx, s.shape_id);
+          const cv = toCanvasPct(liveBox, extent);
           const isOff = offSlideIds.has(slot?.id ?? "");
 
           let cls = shapeClass(tagged, conf, reduced);
           if (isOff) cls = "border-2 border-red-500 bg-red-500/10";
+          const isSel = selected === key;
 
           return (
-            <motion.button
+            <div
               key={s.shape_id}
+              role="button"
               aria-label={`shape ${s.name}`}
               onClick={() => setSelected(key)}
-              drag={!!onMove}
-              dragMomentum={false}
-              dragSnapToOrigin
-              // Instant snap on drop — the persisted left/top is the final
-              // position; no tween animating the box back to origin.
-              transition={{ duration: 0 }}
-              onDragEnd={(_e, info) => handleDragEnd(slideIdx, s.shape_id, info)}
-              whileHover={reduced ? undefined : { scale: 1.02 }}
-              animate={selected === key ? { borderColor: "#2563eb" } : undefined}
-              className={`absolute ${cls}`}
-              style={{ left: `${cv.x}%`, top: `${cv.y}%`, width: `${cv.w}%`, height: `${cv.h}%` }}
+              onPointerDown={(e) => gestureStart(e, slideIdx, s.shape_id, "move")}
+              onPointerMove={gestureMove}
+              onPointerUp={gestureEnd}
+              className={`absolute ${cls} ${isSel ? "outline outline-2 outline-blue-600" : ""}`}
+              style={{
+                left: `${cv.x}%`, top: `${cv.y}%`, width: `${cv.w}%`, height: `${cv.h}%`,
+                touchAction: "none",
+              }}
             />
           );
         })}
