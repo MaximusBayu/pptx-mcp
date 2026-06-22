@@ -160,7 +160,7 @@ export function EditClient({ id, name, slides, previewUrls, previewsPending }:
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={save}
-            disabled={saveState !== "idle"}
+            disabled={saveState !== "idle" || renderState === "rendering"}
             className="btn-primary disabled:opacity-50"
           >
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save template"}

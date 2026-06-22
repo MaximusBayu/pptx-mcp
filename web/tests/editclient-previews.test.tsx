@@ -58,6 +58,19 @@ describe("EditClient lazy previews", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("disables Save while previews are rendering, enables it after", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ status: "ready", previewUrls: ["u0"] }),
+    });
+    global.fetch = fetchMock as any;
+    render(<EditClient id="t1" name="T" slides={slides} previewUrls={[]} previewsPending />);
+    // During the lazy render, Save must be unreachable so a no-moves save
+    // cannot race the base-previews persist and clobber previewKeys.
+    expect((screen.getByRole("button", { name: /save template/i }) as HTMLButtonElement).disabled).toBe(true);
+    await vi.waitFor(() => expect(screen.getByTestId("tag-editor")).toBeTruthy());
+    expect((screen.getByRole("button", { name: /save template/i }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("shows the editor immediately when previews are not pending", () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock as any;
