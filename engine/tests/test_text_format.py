@@ -45,10 +45,15 @@ def test_fill_preserves_alignment_font_bold_italic():
 
 
 def test_shrink_scales_from_original_size_not_hardcoded():
-    # Force a shrink with a tight max_chars; original is 18pt, must shrink below it.
+    # Geometry forces the shrink: a long heading overflows the box even at the
+    # line-spacing floor, so the font drops below the template's original 18pt
+    # (scaling from the original size, not a hardcoded base). max_chars no longer
+    # drives font size — it is a truncation cap; shrink is geometry-driven.
     prs, slide, tb = _deck_with_styled_textbox()
-    fill_slot(slide, _slot(tb.shape_id, Constraints(max_chars=5)),
-              "This is a long heading that overflows")
+    long_heading = ("This is a deliberately very long heading that keeps going "
+                    "well past the width of its box, wrapping across several "
+                    "lines, so the renderer must shrink the font to fit it")
+    fill_slot(slide, _slot(tb.shape_id), long_heading)
     run = tb.text_frame.paragraphs[0].runs[0]
     assert run.font.size is not None
     assert run.font.size.pt < 18  # shrunk relative to the template's size
