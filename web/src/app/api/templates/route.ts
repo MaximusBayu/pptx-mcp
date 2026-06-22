@@ -1,10 +1,11 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/s3";
-import { autodetect, renderBasePreviews } from "@/lib/engine";
+import { autodetect } from "@/lib/engine";
 import { createId } from "@/lib/id";
 
 const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -15,25 +16,26 @@ export async function POST(req: Request) {
   if (!file || !file.name.endsWith(".pptx")) {
     return Response.json({ error: "expected a .pptx file" }, { status: 400 });
   }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return Response.json({ error: "file too large (max 100MB)" }, { status: 413 });
+  }
   const bytes = Buffer.from(await file.arrayBuffer());
   const id = createId();
   const baseKey = `templates/${id}/base.pptx`;
   await putObject(baseKey, bytes, PPTX);
 
-  const detected = await autodetect(bytes);
-  const { previews } = await renderBasePreviews(bytes);
-  const previewKeys: string[] = [];
-  for (let i = 0; i < previews.length; i++) {
-    const key = `templates/${id}/preview-${i}.png`;
-    await putObject(key, Buffer.from(previews[i], "base64"), "image/png");
-    previewKeys.push(key);
+  let detected;
+  try {
+    detected = await autodetect(bytes);
+  } catch {
+    return Response.json({ error: "could not analyze the .pptx" }, { status: 502 });
   }
 
   const tpl = await prisma.template.create({
     data: {
       id, ownerId: session.user.id, name: file.name.replace(/\.pptx$/, ""),
       basePptxKey: baseKey,
-      manifestJson: { draft: { slides: detected.slides, previewKeys } } as object,
+      manifestJson: { draft: { slides: detected.slides, previewKeys: [], previewsStatus: "pending" } } as object,
     },
   });
   return Response.json({ id: tpl.id }, { status: 201 });
