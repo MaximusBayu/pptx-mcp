@@ -66,13 +66,22 @@ describe("upload", () => {
     expect(renderBasePreviews).not.toHaveBeenCalled();
   });
 
+  it("502 on autodetect failure and does not create the template", async () => {
+    (auth as any).mockResolvedValue({ user: { id: "u1" } });
+    (autodetect as any).mockRejectedValueOnce(new Error("analysis failed"));
+    const res = await POST(upload());
+    expect(res.status).toBe(502);
+    expect(prisma.template.create).not.toHaveBeenCalled();
+  });
+
   it("413 when the file exceeds the size cap", async () => {
     (auth as any).mockResolvedValue({ user: { id: "u1" } });
+    const oversized = new File([Buffer.from("PK")], "big.pptx");
+    Object.defineProperty(oversized, "size", { value: 100 * 1024 * 1024 + 1, writable: true });
     const fd = new FormData();
-    const largeBuffer = Buffer.alloc(100 * 1024 * 1024 + 1);
-    const file = new File([largeBuffer], "big.pptx");
-    fd.append("file", file);
+    fd.append("file", oversized);
     const req = new Request("http://x/api/templates", { method: "POST", body: fd });
+    req.formData = vi.fn().mockResolvedValue(fd);
     expect((await POST(req)).status).toBe(413);
   });
 });
