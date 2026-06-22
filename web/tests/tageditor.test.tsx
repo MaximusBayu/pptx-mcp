@@ -55,6 +55,29 @@ describe("TagEditor", () => {
     expect(last[slotKey(0, 5)].id).toBe("title");
   });
 
+  it("resizing the SE handle grows the box and reports onMove", () => {
+    const onMove = vi.fn();
+    render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={() => {}} onMove={onMove} />);
+    const canvas = screen.getByTestId("slide-canvas");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
+      { left: 0, top: 0, width: 640, height: 360, right: 640, bottom: 360, x: 0, y: 0, toJSON() {} } as DOMRect
+    );
+    fireEvent.click(screen.getByRole("button", { name: /shape Title/ })); // select -> handles appear
+    const se = screen.getByLabelText("resize se");
+    fireEvent.pointerDown(se, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(se, { clientX: 64, clientY: 36, pointerId: 1 });
+    fireEvent.pointerUp(se, { clientX: 64, clientY: 36, pointerId: 1 });
+    expect(onMove).toHaveBeenCalled();
+    const [, , bbox] = onMove.mock.calls.at(-1)!;
+    expect(bbox.w).toBeGreaterThan(40); // grew from w=40
+    expect(bbox.h).toBeGreaterThan(20); // grew from h=20
+  });
+
+  it("does not render resize handles until a block is selected", () => {
+    render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={() => {}} onMove={() => {}} />);
+    expect(screen.queryByLabelText("resize se")).toBeNull();
+  });
+
   it("pointer-drag reports onMove(slideIndex, shapeId, bbox), no rebound, no fetch", () => {
     const onMove = vi.fn();
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(new Response("{}") as any);

@@ -15,6 +15,17 @@ import {
 
 const MIN_PCT = 2;
 
+const HANDLES: { h: Handle; style: React.CSSProperties }[] = [
+  { h: "nw", style: { left: -4, top: -4, cursor: "nwse-resize" } },
+  { h: "n", style: { left: "calc(50% - 4px)", top: -4, cursor: "ns-resize" } },
+  { h: "ne", style: { right: -4, top: -4, cursor: "nesw-resize" } },
+  { h: "e", style: { right: -4, top: "calc(50% - 4px)", cursor: "ew-resize" } },
+  { h: "se", style: { right: -4, bottom: -4, cursor: "nwse-resize" } },
+  { h: "s", style: { left: "calc(50% - 4px)", bottom: -4, cursor: "ns-resize" } },
+  { h: "sw", style: { left: -4, bottom: -4, cursor: "nesw-resize" } },
+  { h: "w", style: { left: -4, top: "calc(50% - 4px)", cursor: "ew-resize" } },
+];
+
 type Shape = {
   shape_id: number; name: string; type: string;
   bbox_pct: { x: number; y: number; w: number; h: number };
@@ -265,7 +276,19 @@ export function TagEditor({
                 left: `${cv.x}%`, top: `${cv.y}%`, width: `${cv.w}%`, height: `${cv.h}%`,
                 touchAction: "none",
               }}
-            />
+            >
+              {isSel && onMove && HANDLES.map((hd) => (
+                <span
+                  key={hd.h}
+                  aria-label={`resize ${hd.h}`}
+                  onPointerDown={(e) => gestureStart(e, slideIdx, s.shape_id, hd.h)}
+                  onPointerMove={gestureMove}
+                  onPointerUp={gestureEnd}
+                  className="absolute w-2 h-2 bg-blue-600 rounded-sm"
+                  style={{ ...hd.style, touchAction: "none" }}
+                />
+              ))}
+            </div>
           );
         })}
       </div>
