@@ -58,7 +58,7 @@ describe("base-previews", () => {
     (auth as any).mockResolvedValue({ user: { id: "u1" } });
     (prisma.template.findUnique as any).mockResolvedValue({
       id: "t1", ownerId: "u1", basePptxKey: "templates/t1/base.pptx",
-      manifestJson: { draft: { slides: [], previewKeys: [], previewsStatus: "pending" } },
+      manifestJson: { slide_types: { "0": "title" }, draft: { slides: [], previewKeys: [], previewsStatus: "pending" } },
     });
     const r = await POST(req(), ctx);
     const body = await r.json();
@@ -68,6 +68,9 @@ describe("base-previews", () => {
     const draft = (updateArg.data.manifestJson as any).draft;
     expect(draft.previewKeys).toEqual(["templates/t1/preview-0.png", "templates/t1/preview-1.png"]);
     expect(draft.previewsStatus).toBe("ready");
+    const manifestJson = (updateArg.data.manifestJson as any);
+    expect(manifestJson.slide_types).toEqual({ "0": "title" });
+    expect(manifestJson.draft.slides).toEqual([]);
   });
 
   it("502 when render fails, no persist", async () => {
