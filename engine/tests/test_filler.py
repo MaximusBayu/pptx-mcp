@@ -207,3 +207,20 @@ def test_clear_slot_missing_shape_is_noop():
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     # shape_id 99999 does not exist -> find_shape raises KeyError -> no-op, no raise
     clear_slot(slide, _slot(99999, "text"))
+
+
+def test_fill_table_partial_blanks_surplus_template_rows():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    gf = slide.shapes.add_table(4, 2, Emu(500000), Emu(500000), Emu(4000000), Emu(2000000))
+    table = gf.table
+    # Template ships 4 sample rows.
+    for r in range(4):
+        for c in range(2):
+            table.cell(r, c).text = f"sample{r}{c}"
+    # Deck provides only 2 rows of real data.
+    _fill_table(gf, [["A0", "A1"], ["B0", "B1"]])
+    assert table.cell(0, 0).text == "A0"
+    assert table.cell(1, 1).text == "B1"
+    # Surplus template rows 2-3 are now blank, not leftover sample data.
+    assert all(table.cell(r, c).text == "" for r in (2, 3) for c in range(2))

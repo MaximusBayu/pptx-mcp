@@ -224,6 +224,7 @@ def _fit_cell(cell, value, width_emu, height_emu, slot_id) -> list[SlotError]:
 
 def _fill_table(shape, rows: list[list]) -> list[SlotError]:
     table = shape.table
+    _blank_all_cells(table)          # drop template sample rows before filling
     warnings: list[SlotError] = []
     col_w = [table.columns[c].width for c in range(len(table.columns))]
     row_h = [table.rows[r].height for r in range(len(table.rows))]
