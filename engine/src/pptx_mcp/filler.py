@@ -183,18 +183,22 @@ def _fit_cell(cell, value, width_emu, height_emu, slot_id) -> list[SlotError]:
                 warnings.append(SlotError(0, slot_id, "text_truncated",
                                           f"dropped {len(dropped)} chars to fit cell"))
 
+    shrunk = new_pt < orig_pt
+
     if r0 is not None:
         r0.text = value
         for extra_run in p0.runs[1:]:
             extra_run._r.getparent().remove(extra_run._r)
         for extra_para in tf.paragraphs[1:]:
             extra_para._p.getparent().remove(extra_para._p)
-        r0.font.size = Pt(new_pt)
+        if shrunk:
+            r0.font.size = Pt(new_pt)
     else:
         cell.text = value
-        for para in tf.paragraphs:
-            for run in para.runs:
-                run.font.size = Pt(new_pt)
+        if shrunk:
+            for para in tf.paragraphs:
+                for run in para.runs:
+                    run.font.size = Pt(new_pt)
     return warnings
 
 

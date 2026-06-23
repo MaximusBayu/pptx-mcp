@@ -149,3 +149,13 @@ def test_fit_cell_short_value_unchanged_font():
     assert warnings == []
     assert cell.text == "hi"
     assert cell.text_frame.paragraphs[0].runs[0].font.size == Pt(18)
+
+
+def test_fit_cell_fitting_theme_cell_keeps_inherited_font():
+    prs, slide, gf, table = _deck_with_table(1, 1)
+    cell = table.cell(0, 0)
+    run = cell.text_frame.paragraphs[0].add_run()
+    run.text = "old"  # no explicit font.size -> inherits from theme
+    _fit_cell(cell, "hi", Emu(1_000_000), Emu(400_000), "cell[0,0]")
+    assert cell.text == "hi"
+    assert cell.text_frame.paragraphs[0].runs[0].font.size is None  # not pinned
