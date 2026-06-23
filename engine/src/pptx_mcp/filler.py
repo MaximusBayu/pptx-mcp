@@ -56,6 +56,26 @@ def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
     return []
 
 
+def clear_slot(slide, slot: Slot) -> None:
+    """Remove the template's sample content for an unfilled slot.
+
+    text  -> empty the text frame
+    image -> remove the placeholder/picture shape from the slide
+    table -> blank every cell
+    A slot whose shape is not on the slide is a silent no-op.
+    """
+    try:
+        shape = find_shape(slide, slot.shape_id)
+    except KeyError:
+        return
+    if slot.type == "text":
+        _clear_text(shape)
+    elif slot.type == "image":
+        _clear_image(slide, shape)
+    elif slot.type == "table":
+        _clear_table(shape)
+
+
 def _resolve_spacing(p0, orig_pt) -> float:
     # python-pptx line_spacing is None, a float multiple, or a Length (fixed
     # distance). Resolve to a multiple. Length subclasses int, so check it first.
@@ -260,3 +280,21 @@ def _fill_image(slide, shape, value, fit: str | None = None) -> None:
         Image.new("RGB", (1, 1), (200, 200, 200)).save(buf, format="PNG")
         buf.seek(0)
         slide.shapes.add_picture(buf, new_left, new_top, new_w, new_h)
+
+
+def _clear_text(shape) -> None:
+    shape.text_frame.clear()
+
+
+def _clear_image(slide, shape) -> None:
+    shape._element.getparent().remove(shape._element)
+
+
+def _blank_all_cells(table) -> None:
+    for r in range(len(table.rows)):
+        for c in range(len(table.columns)):
+            table.cell(r, c).text = ""
+
+
+def _clear_table(shape) -> None:
+    _blank_all_cells(shape.table)

@@ -159,3 +159,51 @@ def test_fit_cell_fitting_theme_cell_keeps_inherited_font():
     _fit_cell(cell, "hi", Emu(1_000_000), Emu(400_000), "cell[0,0]")
     assert cell.text == "hi"
     assert cell.text_frame.paragraphs[0].runs[0].font.size is None  # not pinned
+
+
+from pptx import Presentation
+from pptx.util import Emu
+from pptx_mcp.filler import clear_slot
+from pptx_mcp.models import Constraints, Slot
+
+
+def _slot(shape_id, type_):
+    return Slot(id=f"{type_}_1", name=type_, type=type_, shape_id=shape_id,
+                constraints=Constraints())
+
+
+def test_clear_slot_text_empties_text_frame():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Emu(914400), Emu(914400), Emu(2000000), Emu(600000))
+    tb.text_frame.paragraphs[0].add_run().text = "TEMPLATE SAMPLE"
+    clear_slot(slide, _slot(tb.shape_id, "text"))
+    assert tb.text_frame.text == ""
+
+
+def test_clear_slot_image_removes_shape():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Emu(914400), Emu(914400), Emu(1000000), Emu(1000000))
+    sid = tb.shape_id
+    clear_slot(slide, _slot(sid, "image"))
+    assert all(shp.shape_id != sid for shp in slide.shapes)
+
+
+def test_clear_slot_table_blanks_all_cells():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    gf = slide.shapes.add_table(2, 2, Emu(500000), Emu(500000), Emu(4000000), Emu(1000000))
+    table = gf.table
+    for r in range(2):
+        for c in range(2):
+            table.cell(r, c).text = "sample"
+    clear_slot(slide, _slot(gf.shape_id, "table"))
+    assert all(table.cell(r, c).text == "" for r in range(2) for c in range(2))
+
+
+def test_clear_slot_missing_shape_is_noop():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    # shape_id 99999 does not exist -> find_shape raises KeyError -> no-op, no raise
+    clear_slot(slide, _slot(99999, "text"))
