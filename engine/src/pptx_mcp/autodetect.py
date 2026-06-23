@@ -14,6 +14,7 @@ GLYPH_W = 0.5
 LINE_H = 1.2
 DEFAULT_FONT_PT = 18.0
 EMU_PER_PT = 12700
+TABLE_OVERLAP_TAU = 0.6
 
 _DECO_TYPES = {MSO_SHAPE_TYPE.FREEFORM, MSO_SHAPE_TYPE.GROUP, MSO_SHAPE_TYPE.LINE}
 _MIN_AREA_PCT = 1.0
@@ -231,12 +232,44 @@ def estimate_max_chars(width_emu, height_emu, font_pt) -> tuple[int, int]:
     return chars_per_line * lines, lines
 
 
+def _rect_overlap_frac(a: dict, b: dict) -> float:
+    """Fraction of rect a's area that lies inside rect b.
+
+    a, b are bbox_pct dicts (x, y, w, h). Axis-aligned intersection area
+    divided by area(a); 0.0 when a has no area or the rects are disjoint.
+    """
+    area_a = a["w"] * a["h"]
+    if area_a <= 0:
+        return 0.0
+    ix = max(0.0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]))
+    iy = max(0.0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
+    return (ix * iy) / area_a
+
+
+def _demote_text_in_tables(assessments: list["ShapeAssessment"]) -> None:
+    """Demote any text candidate that sits >= TABLE_OVERLAP_TAU inside a table
+    candidate's bbox, so the table owns that region and the overlapping text
+    never becomes a fillable slot. Mutates assessments in place; tables are
+    never demoted. A title/label beside or above a table (little overlap) stays.
+    """
+    tables = [a.bbox_pct for a in assessments if a.is_candidate and a.type == "table"]
+    if not tables:
+        return
+    for a in assessments:
+        if not (a.is_candidate and a.type == "text"):
+            continue
+        if any(_rect_overlap_frac(a.bbox_pct, t) >= TABLE_OVERLAP_TAU for t in tables):
+            a.is_candidate = False
+            a.confidence = round(min(a.confidence, TAU - 0.001), 3)
+
+
 def autodetect(pptx_bytes: bytes) -> dict:
     prs = Presentation(io.BytesIO(pptx_bytes))
     sw, sh = prs.slide_width, prs.slide_height
     slides = []
     for i, slide in enumerate(prs.slides):
         assessments = [classify_shape(shp, sw, sh) for shp in slide.shapes]
+        _demote_text_in_tables(assessments)
         ids = derive_ids([a for a in assessments if a.is_candidate])
         shape_by_id = {shp.shape_id: shp for shp in slide.shapes}
         shapes = []

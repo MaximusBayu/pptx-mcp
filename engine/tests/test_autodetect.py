@@ -2,7 +2,7 @@ from pptx import Presentation
 from pptx_mcp.autodetect import classify_shape, estimate_max_chars, derive_ids, ShapeAssessment, autodetect
 
 
-def _assess(path):
+def _assess_file_shapes(path):
     prs = Presentation(path)
     out = {}
     sw, sh = prs.slide_width, prs.slide_height
@@ -14,7 +14,7 @@ def _assess(path):
 
 def test_classifier_separates_slots_from_decoration(labeled_deck):
     path, labels = labeled_deck
-    assessed = _assess(path)
+    assessed = _assess_file_shapes(path)
     for sid, is_slot in labels.items():
         a = assessed[sid]
         assert a.is_candidate == is_slot, f"shape {sid}: conf={a.confidence}"
@@ -22,7 +22,7 @@ def test_classifier_separates_slots_from_decoration(labeled_deck):
 
 def test_confidence_in_range(labeled_deck):
     path, _ = labeled_deck
-    for a in _assess(path).values():
+    for a in _assess_file_shapes(path).values():
         assert 0.0 <= a.confidence <= 1.0
 
 
@@ -176,3 +176,63 @@ def test_repeatable_marks_structural_twins(tmp_path):
     assert slides[0]["repeatable"] is True
     assert slides[1]["repeatable"] is True
     assert slides[2]["repeatable"] is False
+
+
+# Tests for table overlap demoting
+from pptx_mcp.autodetect import (
+    _rect_overlap_frac, _demote_text_in_tables, ShapeAssessment, TABLE_OVERLAP_TAU,
+)
+
+
+def _assess(shape_id, type_, bbox, is_candidate=True, confidence=0.9):
+    return ShapeAssessment(
+        shape_id=shape_id, name=f"s{shape_id}", type=type_, bbox_pct=bbox,
+        confidence=confidence, is_candidate=is_candidate, font_pt=18.0,
+    )
+
+
+def test_rect_overlap_fully_contained():
+    a = {"x": 10, "y": 10, "w": 10, "h": 10}   # inside b
+    b = {"x": 0, "y": 0, "w": 100, "h": 100}
+    assert _rect_overlap_frac(a, b) == 1.0
+
+
+def test_rect_overlap_disjoint():
+    a = {"x": 0, "y": 0, "w": 10, "h": 10}
+    b = {"x": 50, "y": 50, "w": 10, "h": 10}
+    assert _rect_overlap_frac(a, b) == 0.0
+
+
+def test_rect_overlap_half_in():
+    a = {"x": 0, "y": 0, "w": 10, "h": 10}      # area 100
+    b = {"x": 5, "y": 0, "w": 100, "h": 10}     # covers right half of a
+    assert abs(_rect_overlap_frac(a, b) - 0.5) < 1e-9
+
+
+def test_rect_overlap_zero_area_text():
+    a = {"x": 0, "y": 0, "w": 0, "h": 10}
+    b = {"x": 0, "y": 0, "w": 100, "h": 100}
+    assert _rect_overlap_frac(a, b) == 0.0
+
+
+def test_demote_text_inside_table():
+    table = _assess(1, "table", {"x": 0, "y": 0, "w": 80, "h": 80})
+    inside = _assess(2, "text", {"x": 10, "y": 10, "w": 20, "h": 20})
+    assessments = [table, inside]
+    _demote_text_in_tables(assessments)
+    assert inside.is_candidate is False
+    assert inside.confidence < TABLE_OVERLAP_TAU  # also below TAU=0.5
+    assert table.is_candidate is True  # table never demoted
+
+
+def test_text_beside_table_stays_candidate():
+    table = _assess(1, "table", {"x": 0, "y": 40, "w": 80, "h": 50})
+    title = _assess(2, "text", {"x": 0, "y": 0, "w": 80, "h": 20})  # above, no overlap
+    _demote_text_in_tables([table, title])
+    assert title.is_candidate is True
+
+
+def test_no_tables_no_change():
+    a = _assess(1, "text", {"x": 0, "y": 0, "w": 50, "h": 50})
+    _demote_text_in_tables([a])
+    assert a.is_candidate is True
