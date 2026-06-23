@@ -1,7 +1,7 @@
 import io
 
 from .assembler import assemble
-from .filler import fill_slot
+from .filler import clear_slot, fill_slot
 from .models import SlotError, Template
 from .validate import validate
 
@@ -28,6 +28,7 @@ def render(deck_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
         for slot in st.slots:
             value = provided.get(slot.id, slot.default)
             if value is None or value == "":
+                clear_slot(prs.slides[i], slot)
                 continue
             for w in fill_slot(prs.slides[i], slot, value):
                 w.slide_index = i

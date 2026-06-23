@@ -2,6 +2,7 @@ import io
 import pytest
 from pptx import Presentation
 from pptx_mcp.template import load_template
+from pptx_mcp.assembler import find_shape
 from pptx_mcp.render import render, RenderRejected
 
 
@@ -38,3 +39,19 @@ def test_render_text_overflow_returns_warnings(sample_template_dir):
     data, warnings = render(spec, tpl)
     assert isinstance(data, bytes)
     assert any(w["code"] == "text_truncated" for w in warnings)
+
+
+def test_render_clears_omitted_optional_text_slot(sample_template_dir):
+    """Omitting an optional text slot must clear the template's sample text."""
+    tpl = load_template(sample_template_dir)
+    # title slide: "title" is required, "subtitle" is optional (required=False).
+    # Provide only the required slot; omit subtitle entirely.
+    st = tpl.slide_type("title")
+    opt = next(s for s in st.slots if s.type == "text" and not s.required)
+    deck = {"slides": [{"slide_type": "title", "slots": {"title": "Hello"}}]}
+    pptx_bytes, warnings = render(deck, tpl)
+    prs = Presentation(io.BytesIO(pptx_bytes))
+    shp = find_shape(prs.slides[0], opt.shape_id)
+    assert shp.text_frame.text == "", (
+        f"Expected subtitle shape to be cleared but got: {shp.text_frame.text!r}"
+    )
