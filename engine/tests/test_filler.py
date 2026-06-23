@@ -69,3 +69,83 @@ def test_fill_text_overflow_cuts_and_reports(base_template):
     prs = Presentation(tpl.pptx_path)
     warnings = fill_slot(prs.slides[0], slot, "First short. Second sentence dropped.")
     assert any(w.code == "text_truncated" for w in warnings)
+
+
+import math
+
+from pptx import Presentation
+from pptx.util import Emu, Pt
+
+from pptx_mcp.filler import (
+    fill_slot, _fill_table, _any_cell_overflows, _fit_cell,
+)
+from pptx_mcp.models import Constraints, Slot
+
+
+def _deck_with_table(rows, cols, col_w=1_000_000, row_h=400_000):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    gf = slide.shapes.add_table(rows, cols, Emu(500_000), Emu(500_000),
+                                Emu(col_w * cols), Emu(row_h * rows))
+    table = gf.table
+    for c in range(cols):
+        table.columns[c].width = Emu(col_w)
+    for r in range(rows):
+        table.rows[r].height = Emu(row_h)
+    return prs, slide, gf, table
+
+
+def _table_slot(shape_id):
+    return Slot(id="table_1", name="Table", type="table", shape_id=shape_id,
+                constraints=Constraints())
+
+
+def test_short_cells_no_resize_no_warning():
+    prs, slide, gf, table = _deck_with_table(2, 2)
+    before_w = [table.columns[c].width for c in range(2)]
+    warnings = _fill_table(gf, [["a", "b"], ["c", "d"]])
+    after_w = [table.columns[c].width for c in range(2)]
+    assert after_w == before_w          # no overflow -> no resize
+    assert warnings == []
+    assert table.cell(0, 0).text == "a"
+
+
+def test_footprint_constant_after_resize():
+    prs, slide, gf, table = _deck_with_table(2, 2)
+    total_w_before = sum(table.columns[c].width for c in range(2))
+    total_h_before = sum(table.rows[r].height for r in range(2))
+    long = "x" * 4000
+    _fill_table(gf, [[long, "b"], ["c", "d"]])
+    total_w_after = sum(table.columns[c].width for c in range(2))
+    total_h_after = sum(table.rows[r].height for r in range(2))
+    assert total_w_after == total_w_before
+    assert total_h_after == total_h_before
+
+
+def test_overflowing_column_widened_over_slack():
+    prs, slide, gf, table = _deck_with_table(1, 2)
+    _fill_table(gf, [["x" * 4000, "b"]])
+    assert table.columns[0].width > table.columns[1].width
+
+
+def test_long_cell_truncated_with_warning():
+    prs, slide, gf, table = _deck_with_table(1, 1, col_w=300_000, row_h=200_000)
+    warnings = _fill_table(gf, [["y" * 5000]])
+    assert any(w.code == "text_truncated" for w in warnings)
+
+
+def test_fill_slot_propagates_table_warnings():
+    prs, slide, gf, table = _deck_with_table(1, 1, col_w=300_000, row_h=200_000)
+    warnings = fill_slot(slide, _table_slot(gf.shape_id), [["y" * 5000]])
+    assert any(w.code == "text_truncated" for w in warnings)
+
+
+def test_fit_cell_short_value_unchanged_font():
+    prs, slide, gf, table = _deck_with_table(1, 1)
+    cell = table.cell(0, 0)
+    cell.text_frame.paragraphs[0].add_run().text = "old"
+    cell.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
+    warnings = _fit_cell(cell, "hi", Emu(1_000_000), Emu(400_000), "cell[0,0]")
+    assert warnings == []
+    assert cell.text == "hi"
+    assert cell.text_frame.paragraphs[0].runs[0].font.size == Pt(18)

@@ -1,18 +1,21 @@
 import base64
 import io
 import logging
+import math
 import urllib.request
 
 from PIL import Image
-from pptx.util import Length, Pt
+from pptx.util import Emu, Length, Pt
 
 from .assembler import find_shape
-from .autodetect import LINE_H
+from .autodetect import LINE_H, estimate_max_chars
 from .models import Slot, SlotError
+from .tablefit import MIN_COL_FRAC, MIN_ROW_FRAC, redistribute
 from .textfit import fit_text, truncate_to_sentence
 
 _BASE_PT = 24.0
 _MIN_PT = 12.0
+_CELL_SHRINK_PT = 4.0
 _IMG_MAX_BYTES = 20 * 1024 * 1024
 
 
@@ -47,8 +50,8 @@ def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
     if slot.type == "text":
         return _fill_text(shape, slot, value)
     if slot.type == "table":
-        _fill_table(shape, value)
-    elif slot.type == "image":
+        return _fill_table(shape, value)
+    if slot.type == "image":
         _fill_image(slide, shape, value, slot.constraints.fit)
     return []
 
@@ -111,12 +114,112 @@ def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
     return warnings
 
 
-def _fill_table(shape, rows: list[list]) -> None:
+def _cell_font_pt(cell) -> float:
+    tf = cell.text_frame
+    p0 = tf.paragraphs[0] if tf.paragraphs else None
+    r0 = p0.runs[0] if (p0 is not None and p0.runs) else None
+    if r0 is not None and r0.font.size is not None:
+        return r0.font.size.pt
+    return _BASE_PT
+
+
+def _any_cell_overflows(table, rows, col_w, row_h) -> bool:
+    for r, row in enumerate(rows):
+        if r >= len(table.rows):
+            continue
+        for c, val in enumerate(row):
+            if c >= len(table.columns):
+                continue
+            cap, _ = estimate_max_chars(col_w[c], row_h[r], _cell_font_pt(table.cell(r, c)))
+            if len(str(val)) > cap:
+                return True
+    return False
+
+
+def _resize_columns(table, rows, col_w) -> list[int]:
+    ncols = len(col_w)
+    demands = [0.0] * ncols
+    for row in rows:
+        for c, val in enumerate(row):
+            if c < ncols:
+                demands[c] = max(demands[c], float(len(str(val))))
+    total = sum(col_w)
+    return redistribute(demands, total, int(MIN_COL_FRAC * total))
+
+
+def _resize_rows(table, rows, col_w, row_h) -> list[int]:
+    nrows = len(row_h)
+    demands = [0.0] * nrows
+    for r, row in enumerate(rows):
+        if r >= nrows:
+            continue
+        for c, val in enumerate(row):
+            if c >= len(col_w):
+                continue
+            cap, lines = estimate_max_chars(col_w[c], row_h[r], _cell_font_pt(table.cell(r, c)))
+            cpl = max(1, cap // lines)  # chars per line at the cell's font
+            lines_needed = math.ceil(len(str(val)) / cpl)
+            demands[r] = max(demands[r], float(lines_needed))
+    total = sum(row_h)
+    return redistribute(demands, total, int(MIN_ROW_FRAC * total))
+
+
+def _fit_cell(cell, value, width_emu, height_emu, slot_id) -> list[SlotError]:
+    warnings: list[SlotError] = []
+    tf = cell.text_frame
+    tf.word_wrap = True
+    p0 = tf.paragraphs[0] if tf.paragraphs else None
+    r0 = p0.runs[0] if (p0 is not None and p0.runs) else None
+    orig_pt = r0.font.size.pt if (r0 is not None and r0.font.size is not None) else _BASE_PT
+
+    capacity, _ = estimate_max_chars(width_emu, height_emu, orig_pt)
+    new_pt = orig_pt
+    if len(value) > capacity:
+        new_pt = max(_MIN_PT, orig_pt - _CELL_SHRINK_PT)
+        capacity2 = int(capacity * (orig_pt / new_pt))
+        if len(value) > capacity2:
+            value, dropped = truncate_to_sentence(value, capacity2)
+            if dropped:
+                warnings.append(SlotError(0, slot_id, "text_truncated",
+                                          f"dropped {len(dropped)} chars to fit cell"))
+
+    if r0 is not None:
+        r0.text = value
+        for extra_run in p0.runs[1:]:
+            extra_run._r.getparent().remove(extra_run._r)
+        for extra_para in tf.paragraphs[1:]:
+            extra_para._p.getparent().remove(extra_para._p)
+        r0.font.size = Pt(new_pt)
+    else:
+        cell.text = value
+        for para in tf.paragraphs:
+            for run in para.runs:
+                run.font.size = Pt(new_pt)
+    return warnings
+
+
+def _fill_table(shape, rows: list[list]) -> list[SlotError]:
     table = shape.table
+    warnings: list[SlotError] = []
+    col_w = [table.columns[c].width for c in range(len(table.columns))]
+    row_h = [table.rows[r].height for r in range(len(table.rows))]
+
+    # Auto-size only when some provided cell overflows at its base font, so a
+    # table that already fits keeps its original column/row sizes.
+    if _any_cell_overflows(table, rows, col_w, row_h):
+        col_w = _resize_columns(table, rows, col_w)
+        for c, w in enumerate(col_w):
+            table.columns[c].width = Emu(w)
+        row_h = _resize_rows(table, rows, col_w, row_h)  # demand uses new widths
+        for r, h in enumerate(row_h):
+            table.rows[r].height = Emu(h)
+
     for r, row in enumerate(rows):
         for c, val in enumerate(row):
             if r < len(table.rows) and c < len(table.columns):
-                table.cell(r, c).text = str(val)
+                warnings.extend(_fit_cell(table.cell(r, c), str(val),
+                                          col_w[c], row_h[r], f"cell[{r},{c}]"))
+    return warnings
 
 
 def _fill_image(slide, shape, value, fit: str | None = None) -> None:
