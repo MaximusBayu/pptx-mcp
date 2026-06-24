@@ -11,9 +11,8 @@ export default function Keys() {
   useEffect(() => { load(); }, []);
   async function create() {
     const r = await fetch("/api/keys", { method: "POST" });
-    const data = await r.json();
-    await load();
-    setRaw(data.raw);
+    setRaw((await r.json()).raw);
+    load();
   }
   return (
     <PageTransition>

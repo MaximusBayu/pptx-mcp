@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // web/tests/keys-copy.test.tsx
+import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Keys from "@/app/(app)/settings/keys/page";
@@ -7,6 +8,7 @@ import Keys from "@/app/(app)/settings/keys/page";
 vi.mock("@/lib/motion/PageTransition", () => ({
   PageTransition: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+const motionCache: Record<string, React.ComponentType<any>> = {};
 vi.mock("framer-motion", async () => {
   const actual = await vi.importActual<typeof import("framer-motion")>("framer-motion");
   return {
@@ -14,10 +16,13 @@ vi.mock("framer-motion", async () => {
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     motion: new Proxy(actual.motion, {
       get(_t, prop: string) {
-        return ({ children, onClick, className }: any) => {
-          const Tag = prop as keyof JSX.IntrinsicElements;
-          return <Tag onClick={onClick} className={className}>{children}</Tag>;
-        };
+        if (!motionCache[prop]) {
+          motionCache[prop] = ({ children, onClick, className }: any) => {
+            const Tag = prop as keyof JSX.IntrinsicElements;
+            return <Tag onClick={onClick} className={className}>{children}</Tag>;
+          };
+        }
+        return motionCache[prop];
       },
     }),
   };
