@@ -9,6 +9,21 @@ export async function generateApiKey() {
   return { raw: `pk_${prefix}_${secret}`, prefix, hash };
 }
 
+export async function mintApiKey(userId: string): Promise<string> {
+  let { raw, prefix, hash } = await generateApiKey();
+  try {
+    await prisma.apiKey.create({ data: { userId, prefix, hash } });
+  } catch (err: any) {
+    if (err?.code === "P2002") {
+      ({ raw, prefix, hash } = await generateApiKey());
+      await prisma.apiKey.create({ data: { userId, prefix, hash } });
+    } else {
+      throw err;
+    }
+  }
+  return raw;
+}
+
 export async function verifyApiKey(raw: string): Promise<string | null> {
   const m = /^pk_([0-9a-f]+)_([0-9a-f]+)$/.exec(raw ?? "");
   if (!m) return null;
