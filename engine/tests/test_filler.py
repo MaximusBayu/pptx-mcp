@@ -224,3 +224,37 @@ def test_fill_table_partial_blanks_surplus_template_rows():
     assert table.cell(1, 1).text == "B1"
     # Surplus template rows 2-3 are now blank, not leftover sample data.
     assert all(table.cell(r, c).text == "" for r in (2, 3) for c in range(2))
+
+
+from pptx_mcp.filler import _grow_table_rows
+
+
+def test_grow_table_rows_adds_until_needed():
+    prs, slide, gf, table = _deck_with_table(2, 3)
+    added = _grow_table_rows(table, 5)
+    assert added == 3
+    assert len(table.rows) == 5
+    assert len(table.columns) == 3   # columns unchanged
+
+
+def test_grow_table_rows_noop_when_enough():
+    prs, slide, gf, table = _deck_with_table(4, 2)
+    assert _grow_table_rows(table, 4) == 0
+    assert _grow_table_rows(table, 2) == 0
+    assert len(table.rows) == 4
+
+
+def test_fill_table_grows_grid_for_extra_rows():
+    prs, slide, gf, table = _deck_with_table(2, 2)
+    warnings = _fill_table(gf, [["A0", "A1"], ["B0", "B1"],
+                                ["C0", "C1"], ["D0", "D1"]])
+    assert len(table.rows) == 4
+    assert table.cell(2, 0).text == "C0"
+    assert table.cell(3, 1).text == "D1"
+    assert any(w.code == "table_autogrew" for w in warnings)
+
+
+def test_fill_table_no_grow_warning_when_it_fits():
+    prs, slide, gf, table = _deck_with_table(4, 2)
+    warnings = _fill_table(gf, [["A0", "A1"], ["B0", "B1"]])
+    assert not any(w.code == "table_autogrew" for w in warnings)

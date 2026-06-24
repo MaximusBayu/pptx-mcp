@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import logging
 import math
@@ -222,10 +223,31 @@ def _fit_cell(cell, value, width_emu, height_emu, slot_id) -> list[SlotError]:
     return warnings
 
 
+def _grow_table_rows(table, needed: int) -> int:
+    """Append rows (cloning the last <a:tr>) until the grid has `needed` rows.
+
+    Returns the number of rows added. No-op if the table has no rows to clone
+    from or already has enough. The clone inherits the last row's height and
+    cell formatting; callers blank the cloned sample text before filling.
+    """
+    have = len(table.rows)
+    if have == 0 or needed <= have:
+        return 0
+    tbl = table._tbl
+    last_tr = tbl.tr_lst[-1]
+    for _ in range(needed - have):
+        tbl.append(copy.deepcopy(last_tr))
+    return needed - have
+
+
 def _fill_table(shape, rows: list[list]) -> list[SlotError]:
     table = shape.table
-    _blank_all_cells(table)          # drop template sample rows before filling
     warnings: list[SlotError] = []
+    added = _grow_table_rows(table, len(rows))
+    if added:
+        warnings.append(SlotError(0, None, "table_autogrew",
+                                  f"added {added} row(s) to fit {len(rows)} rows"))
+    _blank_all_cells(table)          # drop template sample rows (incl. clones) before filling
     col_w = [table.columns[c].width for c in range(len(table.columns))]
     row_h = [table.rows[r].height for r in range(len(table.rows))]
 
