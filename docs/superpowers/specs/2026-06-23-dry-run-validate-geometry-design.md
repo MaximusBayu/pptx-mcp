@@ -181,9 +181,12 @@ def _slot_geometry(slide, slot) -> dict | None:
 
 `_shape_font_pt(shape)` reads the first run's font size (pt) or falls back to
 `DEFAULT_FONT_PT` — the same rule autodetect/filler use. `font_pt` and
-`capacity_chars` are `null` for image/table slots. Geometry flows automatically
-into both the MCP `get_template_schema` tool and the web schema view (both call
-`get_schema`).
+`capacity_chars` are `null` for image/table slots. Geometry flows into the MCP
+`get_template_schema` tool (which calls engine `get_schema`). **Note:** the web
+schema view is built separately by `web/src/lib/schema.ts toAgentSchema` from the
+DB `manifestJson` and does **not** call engine `get_schema`, so it does not
+receive geometry — surfacing geometry in the web UI would be a separate
+follow-up. The MCP agent (the consumer that filed #7) is covered.
 
 ## Data flow
 
