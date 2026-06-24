@@ -236,3 +236,61 @@ def test_no_tables_no_change():
     a = _assess(1, "text", {"x": 0, "y": 0, "w": 50, "h": 50})
     _demote_text_in_tables([a])
     assert a.is_candidate is True
+
+
+def _plain_slide(slide, texts):
+    from pptx.util import Inches, Pt
+    for i, t in enumerate(texts):
+        tb = slide.shapes.add_textbox(Inches(1), Inches(0.5 + i * 1.3), Inches(8), Inches(1))
+        tb.text_frame.text = t
+        tb.text_frame.paragraphs[0].runs[0].font.size = Pt(18)
+
+
+def test_single_content_slide_repeatable_by_kind(tmp_path):
+    from pptx import Presentation
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    _plain_slide(prs.slides.add_slide(blank), ["Cover Title"])          # idx 0 -> cover
+    _plain_slide(prs.slides.add_slide(blank),                            # idx 1 -> content
+                 ["Background", "Goals of the project", "Scope notes", "Other detail"])
+    p = tmp_path / "content.pptx"
+    prs.save(str(p))
+    slides = autodetect(p.read_bytes())["slides"]
+    assert slides[1]["kind"] == "content"
+    assert slides[1]["repeatable"] is True      # single instance, flagged by kind
+    assert slides[0]["repeatable"] is False     # cover is not repeatable
+
+
+def test_single_finding_slide_repeatable_by_kind(tmp_path):
+    from pptx import Presentation
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    _plain_slide(prs.slides.add_slide(blank), ["Cover Title"])          # idx 0 -> cover
+    _plain_slide(prs.slides.add_slide(blank),                            # idx 1 -> finding
+                 ["Finding F1", "Severity: HIGH", "CWE-89 details", "Remediation steps"])
+    p = tmp_path / "finding.pptx"
+    prs.save(str(p))
+    slides = autodetect(p.read_bytes())["slides"]
+    assert slides[1]["kind"] == "finding"
+    assert slides[1]["repeatable"] is True
+
+
+def test_single_summary_slide_not_repeatable(tmp_path):
+    from pptx import Presentation
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+    _plain_slide(prs.slides.add_slide(blank), ["Cover Title"])          # idx 0 -> cover
+    _plain_slide(prs.slides.add_slide(blank),                            # idx 1 -> summary
+                 ["Executive Summary", "Point one here", "Point two here", "Point three"])
+    p = tmp_path / "summary.pptx"
+    prs.save(str(p))
+    slides = autodetect(p.read_bytes())["slides"]
+    assert slides[1]["kind"] == "summary"
+    assert slides[1]["repeatable"] is False     # summary kind is not repeatable
+
+
+def test_slide_description_repeat_hint_for_content():
+    from pptx_mcp.autodetect import slide_description
+    assert "Repeat per item" in slide_description("content", ["body"])
+    assert "Repeat per item" in slide_description("finding", ["title"])
+    assert "Repeat per item" not in slide_description("cover", ["title"])

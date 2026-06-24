@@ -76,6 +76,8 @@ _KIND_LABEL = {
     "section": "Section slide", "content": "Content slide",
 }
 
+REPEATABLE_KINDS = {"finding", "content"}
+
 
 def slide_kind(text_blob: str, has_table: bool, index: int,
                num_text: int, has_subtitle: bool) -> str:
@@ -100,7 +102,7 @@ def slide_kind(text_blob: str, has_table: bool, index: int,
 def slide_description(kind: str, slot_ids: list[str]) -> str:
     """A templated sentence: what the slide is + which slots to fill."""
     fill = ", ".join(slot_ids) if slot_ids else "no slots"
-    repeat = " Repeat per item." if kind == "finding" else ""
+    repeat = " Repeat per item." if kind in REPEATABLE_KINDS else ""
     label = _KIND_LABEL.get(kind, "Content slide")
     return f"{label} — fill: {fill}.{repeat}"
 
@@ -318,7 +320,7 @@ def autodetect(pptx_bytes: bytes) -> dict:
     sigs = [slide_signature(s) for s in slides]
     counts = Counter(sigs)
     for s, sig in zip(slides, sigs):
-        s["repeatable"] = counts[sig] >= 2
+        s["repeatable"] = counts[sig] >= 2 or s["kind"] in REPEATABLE_KINDS
     return {"slides": slides}
 
 
