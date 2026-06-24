@@ -71,3 +71,23 @@ def test_move_shapes_endpoint():
                     data={"moves": json.dumps(moves)})
     assert r.status_code == 200
     assert r.content[:2] == b"PK"
+
+
+def test_validate_deck_ok(sample_template_dir, sample_manifest):
+    deck_spec = {"slides": [{"slide_type": "title", "slots": {"title": "Hi", "subtitle": "Yo"}}]}
+    r = client.post("/validate-deck", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "deck_spec": json.dumps(deck_spec)})
+    assert r.status_code == 200
+    body = r.json()
+    assert "errors" in body and "warnings" in body
+    assert body["errors"] == []
+
+
+def test_validate_deck_reports_errors(sample_template_dir, sample_manifest):
+    # An invalid deck (unknown slide_type) -> 200 with errors in the body.
+    r = client.post("/validate-deck", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "deck_spec": json.dumps({"slides": [{"slide_type": "nope", "slots": {}}]})})
+    assert r.status_code == 200
+    assert len(r.json()["errors"]) >= 1

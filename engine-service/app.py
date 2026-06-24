@@ -9,7 +9,7 @@ from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
 from pptx_mcp.move import move_shape, move_shapes
 from pptx_mcp.preview import libreoffice_available, preview
-from pptx_mcp.render import RenderRejected, render
+from pptx_mcp.render import RenderRejected, dry_run, render
 from pptx_mcp.shapes import extract_shapes
 from pptx_mcp.validate import validate
 
@@ -62,6 +62,23 @@ async def render_deck(file: UploadFile = File(...),
                 pass
     return Response(content=out, media_type=_PPTX,
                     headers={"X-Overflow-Warnings": json.dumps(warnings)})
+
+
+@app.post("/validate-deck")
+async def validate_deck_route(file: UploadFile = File(...),
+                              manifest: str = Form(...), deck_spec: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        result = dry_run(json.loads(deck_spec), tpl)
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return JSONResponse(content=result)
 
 
 @app.post("/render-preview")
