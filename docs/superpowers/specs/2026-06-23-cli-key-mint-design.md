@@ -9,7 +9,9 @@ self-serve path already exists.
 ## Goal
 
 Let an operator mint an API key for a user **without an interactive browser
-login**, so a headless/automated MCP agent can be onboarded.
+login**, so a headless/automated MCP agent can be onboarded. Plus a small web
+convenience: a real **copy-to-clipboard button** for the freshly-minted key on
+the existing Settings → API Keys page (today it only labels "Copy now" as text).
 
 ## Background
 
@@ -49,6 +51,10 @@ via `npx vitest run`.
    needed.)
 4. **Reuse `generateApiKey`** for the key format/strength — identical to the web
    path; no second key scheme.
+5. **Copy button on the newly-minted key only.** The clipboard copy applies to
+   the raw key shown once at creation (the only time the secret exists in the
+   UI). Existing list rows hold just `pk_<prefix>_…` (no secret), so they get no
+   copy action.
 
 ## Components
 
@@ -133,7 +139,28 @@ Add `"mcp:key": "tsx scripts/mint-key.ts"` to `scripts`, and `tsx` to
 `apiKey.ts`/`prisma` directly. The script requires the same `DATABASE_URL` env
 the app uses.
 
-### 5. `RUN.md` — document
+### 5. `web/src/app/(app)/settings/keys/page.tsx` — copy button
+
+The page already shows the freshly-minted key in a "Copy now (shown once)" block
+but offers no actual copy action. Add a **Copy** button inside that block that
+calls `navigator.clipboard.writeText(raw)` and shows a transient "Copied!" state
+(reset after ~2s). Client-only; no API change. The existing list rows and the
+Create/Revoke flows are untouched.
+
+```
+const [copied, setCopied] = useState(false);
+// inside the `raw &&` block, beside <code>{raw}</code>:
+<button className="btn-secondary" onClick={async () => {
+  await navigator.clipboard.writeText(raw);
+  setCopied(true);
+  setTimeout(() => setCopied(false), 2000);
+}}>{copied ? "Copied!" : "Copy"}</button>
+```
+
+(Use whatever button class the page/its siblings already use; match existing
+styling.)
+
+### 6. `RUN.md` — document
 
 A short "Minting an API key (operator)" note:
 `npm run mcp:key -- --email user@example.com` → prints a `pk_...` key (shown
@@ -180,6 +207,10 @@ operator: npm run mcp:key -- --email X
   first attempt, retries and succeeds.
 - The argv/stdout/`process.exit` shell in `main()` is intentionally thin and not
   unit-tested (standard for CLI entrypoints).
+- **vitest + jsdom** for the copy button: render the keys page, mock `fetch`
+  (`POST /api/keys` → `{ raw: "pk_x_y" }`, `GET` → `[]`) and
+  `navigator.clipboard.writeText`; click Create, then click Copy, and assert
+  `writeText` was called with the raw key and the button shows "Copied!".
 - Regression: the existing `apikey.test.ts` (generateApiKey/verifyApiKey) stays
   green; `POST /api/keys` behaviour is unchanged (now delegating to `mintApiKey`).
 
