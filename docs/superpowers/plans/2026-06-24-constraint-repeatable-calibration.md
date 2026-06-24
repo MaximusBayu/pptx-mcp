@@ -156,36 +156,12 @@ def _fill_table(shape, rows: list[list]) -> list[SlotError]:
 Run: `cd engine && python -m pytest tests/test_filler.py -v`
 Expected: PASS — all filler tests, including `test_fill_table_grows_grid_for_extra_rows`, `test_fill_table_no_grow_warning_when_it_fits`, and the pre-existing `test_fill_table_partial_blanks_surplus_template_rows`.
 
-- [ ] **Step 9: Write the render-level integration test**
+- [ ] **Step 9: Commit**
 
-The `data` slot caps are `max_rows=5, max_cols=4` and the sample table grid is 2×2 (`engine/tests/conftest.py`). A 6-row deck exceeds both the grid and the old row cap. Append to `engine/tests/test_render.py`:
-
-```python
-def test_render_grows_table_beyond_row_cap(sample_template_dir):
-    from pptx_mcp.template import load_template
-    from pptx_mcp.render import render
-    tpl = load_template(sample_template_dir)
-    rows = [["r%d-c0" % i, "r%d-c1" % i] for i in range(6)]  # 6 > grid 2, > max_rows 5
-    data, warnings = render({"slides": [
-        {"slide_type": "table", "slots": {"data": rows}},
-    ]}, tpl)
-    assert isinstance(data, bytes) and len(data) > 0           # rendered, not rejected
-    grow = [w for w in warnings if w["code"] == "table_autogrew"]
-    assert len(grow) == 1
-    assert grow[0]["slide_index"] == 0                         # reassigned by render()
-```
-
-- [ ] **Step 10: Run to verify failure (validation still rejects 6 rows until Task 2)**
-
-Run: `cd engine && python -m pytest tests/test_render.py::test_render_grows_table_beyond_row_cap -v`
-Expected: FAIL — `render` raises `RenderRejected` because `validate`/`assess_table` still rejects `6 > max_rows 5`. This is the seam Task 2 removes; leave the test failing and move on (it is the first green check of Task 2).
-
-NOTE for the implementer: do **not** weaken this test to dodge the failure. It is expected to fail at the end of Task 1 and pass after Task 2. Commit it now (red) so Task 2 turns it green.
-
-- [ ] **Step 11: Commit**
+(The render-level integration test belongs in Task 2, where validation is relaxed so it can pass — it is intentionally NOT added here, to avoid committing a red test.)
 
 ```bash
-git add engine/src/pptx_mcp/filler.py engine/tests/test_filler.py engine/tests/test_render.py
+git add engine/src/pptx_mcp/filler.py engine/tests/test_filler.py
 git commit -m "feat(engine): grow table grid (clone last row) to fit over-cap row counts in _fill_table"
 ```
 
@@ -195,11 +171,11 @@ git commit -m "feat(engine): grow table grid (clone last row) to fit over-cap ro
 
 **Files:**
 - Modify: `engine/src/pptx_mcp/fit.py:15-21` (`assess_table` — remove the `max_rows` branch)
-- Test: `engine/tests/test_fit.py`, `engine/tests/test_validate.py`
+- Test: `engine/tests/test_fit.py`, `engine/tests/test_validate.py`, `engine/tests/test_render.py`
 
 **Interfaces:**
-- Consumes: `assess_table(rows, c) -> tuple[str, str]`, `Constraints(max_rows, max_cols)`. The sample `data` slot caps are `max_rows=5, max_cols=4`.
-- Produces: `assess_table` no longer returns `"reject"` for row overflow; it still returns `"reject"` for column overflow. This turns Task 1's `test_render_grows_table_beyond_row_cap` green.
+- Consumes: `assess_table(rows, c) -> tuple[str, str]`, `Constraints(max_rows, max_cols)`. The sample `data` slot caps are `max_rows=5, max_cols=4`; the sample table grid is 2×2 (`engine/tests/conftest.py`). Task 1's `_fill_table` already grows the grid and emits a `table_autogrew` warning; `render()` reassigns each warning's `slide_index`.
+- Produces: `assess_table` no longer returns `"reject"` for row overflow; it still returns `"reject"` for column overflow. With the row reject gone, a row-overflow deck now renders end-to-end (Task 1's grow path).
 
 - [ ] **Step 1: Update the `assess_table` unit tests (row no longer rejects; col still does)**
 
@@ -277,15 +253,34 @@ def test_table_col_overflow_message_has_numbers(sample_template_dir):
     assert "4" in e.message and "5" in e.message
 ```
 
-- [ ] **Step 6: Run validate + render tests to verify they pass**
+- [ ] **Step 6: Write the render-level integration test (now that validation is relaxed)**
+
+A 6-row deck exceeds both the 2×2 grid and the old `max_rows=5` cap; with the row reject gone, `render` reaches Task 1's grow path. Append to `engine/tests/test_render.py`:
+
+```python
+def test_render_grows_table_beyond_row_cap(sample_template_dir):
+    from pptx_mcp.template import load_template
+    from pptx_mcp.render import render
+    tpl = load_template(sample_template_dir)
+    rows = [["r%d-c0" % i, "r%d-c1" % i] for i in range(6)]  # 6 > grid 2, > max_rows 5
+    data, warnings = render({"slides": [
+        {"slide_type": "table", "slots": {"data": rows}},
+    ]}, tpl)
+    assert isinstance(data, bytes) and len(data) > 0           # rendered, not rejected
+    grow = [w for w in warnings if w["code"] == "table_autogrew"]
+    assert len(grow) == 1
+    assert grow[0]["slide_index"] == 0                         # reassigned by render()
+```
+
+- [ ] **Step 7: Run validate + render tests to verify they pass**
 
 Run: `cd engine && python -m pytest tests/test_validate.py tests/test_render.py::test_render_grows_table_beyond_row_cap -v`
-Expected: PASS — the new validate tests pass, and Task 1's `test_render_grows_table_beyond_row_cap` is now green (validation no longer rejects the 6-row deck, so `render` reaches `_fill_table` and grows).
+Expected: PASS — the new validate tests pass, and `test_render_grows_table_beyond_row_cap` is green (validation no longer rejects the 6-row deck, so `render` reaches `_fill_table` and grows the grid).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add engine/src/pptx_mcp/fit.py engine/tests/test_fit.py engine/tests/test_validate.py
+git add engine/src/pptx_mcp/fit.py engine/tests/test_fit.py engine/tests/test_validate.py engine/tests/test_render.py
 git commit -m "feat(engine): assess_table stops rejecting row overflow (grid grows); columns stay capped"
 ```
 
