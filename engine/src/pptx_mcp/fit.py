@@ -13,8 +13,6 @@ def assess_text(value: str | None, c: Constraints) -> tuple[str, str]:
 
 
 def assess_table(rows: list[list[object]], c: Constraints) -> tuple[str, str]:
-    if c.max_rows is not None and len(rows) > c.max_rows:
-        return "reject", f"max {c.max_rows} rows, got {len(rows)}"
     cols = max((len(r) for r in rows), default=0)
     if c.max_cols is not None and cols > c.max_cols:
         return "reject", f"max {c.max_cols} cols, got {cols}"

@@ -39,8 +39,8 @@ def test_render_deck_ok(storage):
 
 
 def test_render_deck_invalid(storage):
-    # Tables still reject; text overflow now produces warnings (non-fatal)
-    bad = {"slides": [{"slide_type": "table", "slots": {"data": [["a"]] * 10}}]}
+    # Column overflow still rejects; row overflow is now allowed (grows the grid)
+    bad = {"slides": [{"slide_type": "table", "slots": {"data": [[1, 2, 3, 4, 5]]}}]}
     out = tool_render_deck(storage, "http://x", "sample", bad)
     assert out["download_url"] is None
     assert out["validation"][0]["code"] == "table_overflow"

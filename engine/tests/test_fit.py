@@ -36,13 +36,19 @@ def test_table_ok():
     assert d == "ok"
 
 
-def test_table_reject_rows():
-    d, msg = assess_table([[1]] * 5, Constraints(max_rows=3, max_cols=3))
-    assert d == "reject"
-    assert "row" in msg.lower()
+def test_table_many_rows_ok():
+    # rows over max_rows are no longer a validation reject (filler grows the grid)
+    d, _ = assess_table([[1]] * 9, Constraints(max_rows=3, max_cols=3))
+    assert d == "ok"
 
 
-def test_table_reject_message_has_numbers():
-    d, msg = assess_table([[1]] * 9, Constraints(max_rows=5, max_cols=3))
+def test_table_reject_cols():
+    d, msg = assess_table([[1, 2, 3, 4, 5]], Constraints(max_rows=3, max_cols=3))
     assert d == "reject"
-    assert "5" in msg and "9" in msg
+    assert "col" in msg.lower()
+
+
+def test_table_reject_cols_message_has_numbers():
+    d, msg = assess_table([[1, 2, 3, 4, 5]], Constraints(max_rows=5, max_cols=3))
+    assert d == "reject"
+    assert "3" in msg and "5" in msg

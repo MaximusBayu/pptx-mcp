@@ -24,8 +24,8 @@ def test_render_produces_valid_pptx(sample_template_dir):
 
 def test_render_rejects_invalid(sample_template_dir):
     tpl = load_template(sample_template_dir)
-    # Tables still reject; text overflow is now a non-fatal warning
-    bad = {"slides": [{"slide_type": "table", "slots": {"data": [["a"]] * 10}}]}
+    # Column overflow still rejects; row overflow is now allowed (grows the grid)
+    bad = {"slides": [{"slide_type": "table", "slots": {"data": [[1, 2, 3, 4, 5]]}}]}
     with pytest.raises(RenderRejected) as ei:
         render(bad, tpl)
     assert ei.value.errors[0].code == "table_overflow"
@@ -74,3 +74,15 @@ def test_dry_run_invalid_deck_returns_errors(sample_template_dir):
     # An unknown slide_type yields validation errors, no warnings, and never raises.
     assert len(result["errors"]) >= 1
     assert result["warnings"] == []
+
+
+def test_render_grows_table_beyond_row_cap(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    rows = [["r%d-c0" % i, "r%d-c1" % i] for i in range(6)]  # 6 > grid 2, > max_rows 5
+    data, warnings = render({"slides": [
+        {"slide_type": "table", "slots": {"data": rows}},
+    ]}, tpl)
+    assert isinstance(data, bytes) and len(data) > 0           # rendered, not rejected
+    grow = [w for w in warnings if w["code"] == "table_autogrew"]
+    assert len(grow) == 1
+    assert grow[0]["slide_index"] == 0                         # reassigned by render()
