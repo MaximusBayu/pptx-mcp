@@ -84,3 +84,13 @@ export async function autodetect(pptx: Buffer): Promise<AutodetectResult> {
   if (!r.ok) throw new EngineError("autodetect failed");
   return r.json();
 }
+
+export async function validateDeck(pptx: Buffer, manifest: unknown, deckSpec: unknown):
+  Promise<{ errors: any[]; warnings: any[] }> {
+  const r = await fetch(`${BASE}/validate-deck`, {
+    method: "POST",
+    body: form(pptx, { manifest: JSON.stringify(manifest), deck_spec: JSON.stringify(deckSpec) }),
+  });
+  if (!r.ok) throw new EngineError("validate-deck failed");
+  return r.json();
+}

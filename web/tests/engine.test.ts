@@ -36,4 +36,14 @@ describe("engine client", () => {
     expect(url).toContain("/move-shapes");
     spy.mockRestore();
   });
+
+  it("validateDeck returns errors+warnings", async () => {
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({ errors: [{ code: "missing_required_slot" }], warnings: [] }),
+      { status: 200, headers: { "content-type": "application/json" } }));
+    const { validateDeck } = await import("@/lib/engine");
+    const out = await validateDeck(Buffer.from("x"), {}, {});
+    expect(out.errors[0].code).toBe("missing_required_slot");
+    expect(out.warnings).toEqual([]);
+  });
 });
