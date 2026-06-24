@@ -6,12 +6,14 @@ import { PageTransition } from "@/lib/motion/PageTransition";
 export default function Keys() {
   const [keys, setKeys] = useState<{ id: string; prefix: string; createdAt: string; lastUsedAt: string | null }[]>([]);
   const [raw, setRaw] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   async function load() { setKeys(await (await fetch("/api/keys")).json()); }
   useEffect(() => { load(); }, []);
   async function create() {
     const r = await fetch("/api/keys", { method: "POST" });
-    setRaw((await r.json()).raw);
-    load();
+    const data = await r.json();
+    await load();
+    setRaw(data.raw);
   }
   return (
     <PageTransition>
@@ -22,8 +24,13 @@ export default function Keys() {
         <AnimatePresence>
           {raw && (
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }} className="border rounded p-3 bg-yellow-50 break-all">
-              Copy now (shown once): <code>{raw}</code>
+              exit={{ opacity: 0 }} className="border rounded p-3 bg-yellow-50 break-all space-y-2">
+              <div>Copy now (shown once): <code>{raw}</code></div>
+              <button className="btn-primary" onClick={async () => {
+                await navigator.clipboard.writeText(raw);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}>{copied ? "Copied!" : "Copy"}</button>
             </motion.div>
           )}
         </AnimatePresence>
