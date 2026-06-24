@@ -1,4 +1,4 @@
-from .render import RenderRejected, render
+from .render import RenderRejected, dry_run, render
 from .schema import get_schema
 from .storage import Storage
 from .validate import validate
@@ -28,6 +28,10 @@ def tool_render_deck(storage: Storage, base_url: str, template_id: str, deck_spe
         return {"validation": [err.to_dict() for err in e.errors], "download_url": None}
     token = storage.put_output(data, ".pptx")
     return {"validation": [], "download_url": f"{base_url}/files/{token}", "warnings": warnings}
+
+
+def tool_validate_deck(storage: Storage, template_id: str, deck_spec: dict) -> dict:
+    return dry_run(deck_spec, storage.load(template_id))
 
 
 def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
@@ -62,6 +66,11 @@ def build_server(storage: Storage, base_url: str):
     def get_template_schema(template_id: str) -> dict:
         """Get full slot schema for a template."""
         return tool_get_template_schema(storage, template_id)
+
+    @mcp.tool()
+    def validate_deck(template_id: str, deck_spec: dict) -> dict:
+        """Dry-run validate a deck: returns {errors, warnings} without rendering output."""
+        return tool_validate_deck(storage, template_id, deck_spec)
 
     @mcp.tool()
     def render_deck(template_id: str, deck_spec: dict) -> dict:

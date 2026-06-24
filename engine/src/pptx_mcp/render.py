@@ -37,3 +37,17 @@ def render(deck_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
     buf = io.BytesIO()
     prs.save(buf)
     return buf.getvalue(), warnings
+
+
+def dry_run(deck_spec: dict, template: Template) -> dict:
+    """Validate + fill without producing output; return errors and warnings.
+
+    Reuses render() (which fills every slot) and discards the bytes, so callers
+    get the same constraint errors and truncation warnings a real render would,
+    without a download or a LibreOffice preview.
+    """
+    try:
+        _bytes, warnings = render(deck_spec, template)
+    except RenderRejected as e:
+        return {"errors": [err.to_dict() for err in e.errors], "warnings": []}
+    return {"errors": [], "warnings": warnings}

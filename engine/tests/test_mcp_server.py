@@ -3,6 +3,7 @@ import pytest
 from pptx_mcp.storage import Storage
 from pptx_mcp.mcp_server import (
     tool_list_templates, tool_get_template_schema, tool_render_deck,
+    tool_validate_deck,
 )
 
 
@@ -51,3 +52,11 @@ def test_render_deck_text_overflow_warns(storage):
     out = tool_render_deck(storage, "http://x", "sample", bad)
     assert out["download_url"] is not None
     assert any(w["code"] == "text_truncated" for w in out["warnings"])
+
+
+def test_tool_validate_deck_returns_errors_and_warnings(storage):
+    # Use the same storage + template_id the existing mcp_server tests use.
+    result = tool_validate_deck(storage, "sample", {"slides": []})
+    assert "errors" in result and "warnings" in result
+    assert isinstance(result["errors"], list)
+    assert isinstance(result["warnings"], list)

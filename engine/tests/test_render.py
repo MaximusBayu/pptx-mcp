@@ -3,7 +3,7 @@ import pytest
 from pptx import Presentation
 from pptx_mcp.template import load_template
 from pptx_mcp.assembler import find_shape
-from pptx_mcp.render import render, RenderRejected
+from pptx_mcp.render import render, RenderRejected, dry_run
 
 
 def _deck():
@@ -55,3 +55,22 @@ def test_render_clears_omitted_optional_text_slot(sample_template_dir):
     assert shp.text_frame.text == "", (
         f"Expected subtitle shape to be cleared but got: {shp.text_frame.text!r}"
     )
+
+
+def test_dry_run_valid_deck_returns_no_errors(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    # title slide: "title" is required, "subtitle" is optional.
+    # Providing both required slots makes this a genuinely valid deck.
+    deck = {"slides": [{"slide_type": "title", "slots": {"title": "Acme", "subtitle": "Q3"}}]}
+    result = dry_run(deck, tpl)
+    assert result["errors"] == []
+    assert isinstance(result["warnings"], list)
+
+
+def test_dry_run_invalid_deck_returns_errors(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    deck = {"slides": [{"slide_type": "does_not_exist", "slots": {}}]}
+    result = dry_run(deck, tpl)
+    # An unknown slide_type yields validation errors, no warnings, and never raises.
+    assert len(result["errors"]) >= 1
+    assert result["warnings"] == []
