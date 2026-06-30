@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
 from pptx_mcp.catalog import get_catalog
+from pptx_mcp.composer import ComposeRejected, compose, compose_dry_run
 from pptx_mcp.move import move_shape, move_shapes
 from pptx_mcp.preview import PreviewTimeout, libreoffice_available, preview
 from pptx_mcp.render import RenderRejected, dry_run, render
@@ -76,6 +77,45 @@ async def validate_deck_route(file: UploadFile = File(...),
     try:
         tpl = load_from_bytes(data, json.loads(manifest))
         result = dry_run(json.loads(deck_spec), tpl)
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return JSONResponse(content=result)
+
+
+@app.post("/compose")
+async def compose_route(file: UploadFile = File(...),
+                        manifest: str = Form(...), composition_spec: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        out, warnings = compose(json.loads(composition_spec), tpl)
+    except ComposeRejected as e:
+        return JSONResponse(status_code=422,
+                            content={"validation": [x.to_dict() for x in e.errors]})
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return Response(content=out, media_type=_PPTX,
+                   headers={"X-Overflow-Warnings": json.dumps(warnings)})
+
+
+@app.post("/validate-composition")
+async def validate_composition_route(file: UploadFile = File(...),
+                                     manifest: str = Form(...),
+                                     composition_spec: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        result = compose_dry_run(json.loads(composition_spec), tpl)
     finally:
         if tpl is not None:
             try:

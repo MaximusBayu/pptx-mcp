@@ -127,3 +127,41 @@ def test_catalog_endpoint(sample_template_dir, sample_manifest):
     assert body["id"] == "sample"
     assert isinstance(body["components"], list) and body["components"]
     assert all("component_id" in c for c in body["components"])
+
+
+def _title_cid(sample_template_dir, sample_manifest):
+    from pptx_mcp.bytesio import load_from_bytes
+    from pptx_mcp.catalog import get_catalog
+    tpl = load_from_bytes((sample_template_dir / "base.pptx").read_bytes(), sample_manifest)
+    return next(c["component_id"] for c in get_catalog(tpl)["components"]
+                if c.get("slot_id") == "title")
+
+
+def test_compose_ok(sample_template_dir, sample_manifest):
+    cid = _title_cid(sample_template_dir, sample_manifest)
+    spec = {"slides": [{"canvas": 0, "placements": [{"component_id": cid, "content": "Hi"}]}]}
+    r = client.post("/compose", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "composition_spec": json.dumps(spec)})
+    assert r.status_code == 200
+    assert r.content[:2] == b"PK"
+
+
+def test_compose_rejects(sample_template_dir, sample_manifest):
+    spec = {"slides": [{"canvas": 99, "placements": []}]}
+    r = client.post("/compose", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "composition_spec": json.dumps(spec)})
+    assert r.status_code == 422
+    assert r.json()["validation"][0]["code"] == "unknown_canvas"
+
+
+def test_validate_composition_endpoint(sample_template_dir, sample_manifest):
+    spec = {"slides": [{"canvas": 99, "placements": []}]}
+    r = client.post("/validate-composition", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "composition_spec": json.dumps(spec)})
+    assert r.status_code == 200
+    body = r.json()
+    assert "errors" in body and "warnings" in body
+    assert any(e["code"] == "unknown_canvas" for e in body["errors"])
