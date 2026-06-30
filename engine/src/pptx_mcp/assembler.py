@@ -13,6 +13,56 @@ _RID_ATTR = "{%s}id" % _REL_NS
 # Reltype fragment that identifies a slide-layout relationship
 _SLIDE_LAYOUT_RELTYPE_FRAGMENT = "slideLayout"
 
+_EMBED_ATTR = "{%s}embed" % _REL_NS
+_LINK_ATTR = "{%s}link" % _REL_NS
+_ID_ATTR = "{%s}id" % _REL_NS
+_REL_ATTRS = (_EMBED_ATTR, _LINK_ATTR, _ID_ATTR)
+
+
+def _remap_rels(src_part, dest_part, element) -> dict:
+    """Copy the relationships *element* references from src_part into dest_part,
+    rewrite the r:embed/r:link/r:id ids on element in place, and return the
+    old_rid -> new_rid map. Slide-layout rels are skipped (already wired via
+    add_slide)."""
+    used = set()
+    for el in element.iter():
+        for attr in _REL_ATTRS:
+            val = el.get(attr)
+            if val:
+                used.add(val)
+
+    old_to_new: dict[str, str] = {}
+    for rid in used:
+        if rid not in src_part.rels:
+            continue
+        rel = src_part.rels[rid]
+        if _SLIDE_LAYOUT_RELTYPE_FRAGMENT in rel.reltype:
+            continue
+        if rel.is_external:
+            old_to_new[rid] = dest_part.relate_to(rel._target, rel.reltype, is_external=True)
+        else:
+            old_to_new[rid] = dest_part.relate_to(rel._target, rel.reltype)
+
+    if old_to_new:
+        for el in element.iter():
+            for attr in _REL_ATTRS:
+                val = el.get(attr)
+                if val and val in old_to_new:
+                    el.set(attr, old_to_new[val])
+    return old_to_new
+
+
+def drop_base_slides(prs, count: int) -> None:
+    """Remove the first *count* slides from the package: drop each <p:sldId>
+    (ref-count -> 0) then drop_rel so the serialiser omits the orphaned Part."""
+    xml_slides = prs.slides._sldIdLst
+    originals = list(xml_slides)[:count]
+    rids = [sid.get(_RID_ATTR) for sid in originals]
+    for sid, rid in zip(originals, rids):
+        xml_slides.remove(sid)
+        if rid is not None:
+            prs.part.drop_rel(rid)
+
 
 def find_shape(slide, shape_id: int):
     """Return the shape on *slide* whose shape_id matches, or raise KeyError."""
@@ -49,31 +99,8 @@ def _duplicate_slide(prs: Presentation, src_index: int):
     for shp in source.shapes:
         dest.shapes._spTree.append(copy.deepcopy(shp._element))
 
-    # Copy ALL relationships from the source slide part into the dest part,
-    # skipping the slide-layout rel (already established by add_slide).
-    # Record old_rid -> new_rid for every copied relationship.
-    old_to_new_rid: dict[str, str] = {}
-    for rid, rel in source.part.rels.items():
-        if _SLIDE_LAYOUT_RELTYPE_FRAGMENT in rel.reltype:
-            # Already wired via add_slide(layout); copying it again would
-            # create a duplicate slide-layout relationship in the dest part.
-            continue
-        if rel.is_external:
-            new_rid = dest.part.relate_to(rel._target, rel.reltype, is_external=True)
-        else:
-            new_rid = dest.part.relate_to(rel._target, rel.reltype)
-        old_to_new_rid[rid] = new_rid
-
-    # Rewrite r:embed / r:link / r:id attributes in the copied XML to dest rIds.
-    if old_to_new_rid:
-        embed_attr = "{%s}embed" % _REL_NS
-        link_attr = "{%s}link" % _REL_NS
-        rid_attr = "{%s}id" % _REL_NS
-        for elem in dest.shapes._spTree.iter():
-            for attr in (embed_attr, link_attr, rid_attr):
-                old_val = elem.get(attr)
-                if old_val and old_val in old_to_new_rid:
-                    elem.set(attr, old_to_new_rid[old_val])
+    # Copy + remap the relationships those shapes reference into the dest part.
+    _remap_rels(source.part, dest.part, dest.shapes._spTree)
 
     return dest
 
@@ -102,18 +129,5 @@ def assemble(order: list[int], template: Template) -> Presentation:
     for src_index in order:
         _duplicate_slide(prs, src_index)
 
-    # Collect rIds and sldId elements for the original base slides before removal.
-    xml_slides = prs.slides._sldIdLst
-    originals = list(xml_slides)[:original_count]
-
-    # Capture the rId for each original before touching the XML.
-    original_rids = [sid.get(_RID_ATTR) for sid in originals]
-
-    # Remove each original slide: first drop the XML element (reduces ref-count
-    # to 0), then call drop_rel so the Part is removed from the package.
-    for sid, rId in zip(originals, original_rids):
-        xml_slides.remove(sid)   # ref-count goes to 0
-        if rId is not None:
-            prs.part.drop_rel(rId)   # Part removed from package
-
+    drop_base_slides(prs, original_count)
     return prs

@@ -80,3 +80,28 @@ def test_find_shape_by_id(sample_template_dir):
     assert shp.text_frame.text == "TITLE", (
         f"expected shape text 'TITLE', got {shp.text_frame.text!r}"
     )
+
+
+def test_remap_rels_copies_referenced_image_rel(sample_template_dir):
+    """A single picture element deep-copied to a fresh slide has its blip rel
+    remapped into the dest part."""
+    import copy
+    from pptx import Presentation
+    from pptx_mcp.assembler import _remap_rels
+
+    prs = Presentation(str(sample_template_dir / "base.pptx"))
+    src_slide = prs.slides[3]  # image slide
+    pic = next(s for s in src_slide.shapes if s.shape_type == 13)
+
+    dest = prs.slides.add_slide(prs.slide_layouts[6])
+    el = copy.deepcopy(pic._element)
+    dest.shapes._spTree.append(el)
+
+    mapping = _remap_rels(src_slide.part, dest.part, el)
+    assert mapping  # at least the blip rel was remapped
+
+    embed_attr = "{%s}embed" % "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    new_rids = {e.get(embed_attr) for e in el.iter() if e.get(embed_attr)}
+    assert new_rids
+    for rid in new_rids:
+        assert rid in dest.part.rels  # resolves in the dest part
