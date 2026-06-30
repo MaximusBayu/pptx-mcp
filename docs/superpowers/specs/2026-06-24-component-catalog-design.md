@@ -55,8 +55,12 @@ mutation.
 5. **Best-effort style summary** — `font_name`, `font_pt`, `font_color` (hex),
    `fill_color` (hex), each `null` when theme-inherited or unreadable. No
    gradient/image-fill decomposition; solid fore color or null.
-6. **MCP only** (like Theme C geometry). The web has its own schema view; a web
-   surface for the catalog is a separate follow-up.
+6. **Both MCP and a web UI** (user's choice). The agent reads the catalog over
+   MCP; a human reads it on a new server-rendered template page. The web page
+   computes the catalog server-side via the engine-service (the DB `manifestJson`
+   lacks the pptx-derived style/geometry), mirroring how the Use page computes
+   its schema server-side. No separate client JSON route in R1 (add later if R2
+   needs client fetch).
 
 ## Components
 
@@ -174,6 +178,88 @@ def get_template_components(template_id: str) -> dict:
     return tool_get_template_components(storage, template_id)
 ```
 
+### 3. `engine-service/app.py` — `POST /catalog`
+
+Mirrors `/validate-deck` (form `file` + `manifest`, `load_from_bytes`, JSON out,
+temp unlink in `finally`):
+
+```
+from pptx_mcp.catalog import get_catalog   # add to imports
+
+@app.post("/catalog")
+async def catalog_route(file: UploadFile = File(...), manifest: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        result = get_catalog(tpl)
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return JSONResponse(content=result)
+```
+
+### 4. `web/src/lib/engine.ts` — `getCatalog`
+
+Mirror `validateDeck` (no `deck_spec`, just `file` + `manifest`):
+
+```
+export async function getCatalog(pptx: Buffer, manifest: unknown):
+  Promise<{ id: string; name: string; description: string; components: any[] }> {
+  const r = await fetch(`${BASE}/catalog`, {
+    method: "POST",
+    body: form(pptx, { manifest: JSON.stringify(manifest) }),
+  });
+  if (!r.ok) throw new EngineError("catalog failed");
+  return r.json();
+}
+```
+
+### 5. `web/src/app/(app)/templates/[id]/components/page.tsx` — server page
+
+Mirrors the Use page's auth + owner guard; computes the catalog server-side from
+the stored pptx (the DB `manifestJson` lacks pptx style/geometry):
+
+```
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getObject } from "@/lib/s3";
+import { getCatalog } from "@/lib/engine";
+import { ComponentsClient } from "./ComponentsClient";
+
+export const dynamic = "force-dynamic";
+
+export default async function ComponentsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await auth();
+  const tpl = await prisma.template.findUnique({ where: { id } });
+  if (!tpl || tpl.ownerId !== session?.user?.id) return <div className="p-8">Not found</div>;
+  const base = await getObject(tpl.basePptxKey);
+  const catalog = await getCatalog(base, tpl.manifestJson);
+  return <ComponentsClient name={tpl.name} components={catalog.components} />;
+}
+```
+
+### 6. `web/src/app/(app)/templates/[id]/components/ComponentsClient.tsx` — display
+
+A client component rendering the components grouped by `source_slide`. Each
+component is a card showing: a **type** badge (text / image / table / other→
+labelled "decor"), a **fillable** badge (`Slot: <slot_id>` when fillable, else
+`Decor`), the `name` and `text` sample, geometry as `x/y · w×h` (bbox %), and a
+style line `font_name @ font_pt` with small color swatches for `font_color` /
+`fill_color` (a swatch is omitted when its value is `null`). Match the existing
+page styling (the same Tailwind utility classes the Use/edit pages use; no new
+design system). Read-only — no mutation, no actions.
+
+### 7. Nav link
+
+Add one link to the catalog page from the existing Use page header
+(`web/src/app/(app)/templates/[id]/use/UseClient.tsx` or its page) —
+`/templates/${id}/components`, labelled "Components" — so the page is reachable.
+
 ## Data flow
 
 ```
@@ -182,6 +268,11 @@ Agent -> MCP get_template_components(template_id)
       -> open template.pptx, build (source_slide, shape_id) -> slot_id map
       -> per slide, per shape: _component_dict (id, type, fillable, geometry, style, text)
       -> {id, name, description, components: [...]}
+
+Web   -> GET /templates/[id]/components (server page, session owner-only)
+      -> getObject(basePptxKey) + manifestJson
+      -> getCatalog -> engine-service POST /catalog -> load_from_bytes -> get_catalog
+      -> {components: [...]} -> ComponentsClient (grouped by source_slide)
 ```
 
 ## Error handling / edges
@@ -226,6 +317,14 @@ Agent -> MCP get_template_components(template_id)
   decor path.)
 - **engine `tool_get_template_components`**: returns the same catalog dict for a
   stored template id; the MCP `get_template_components` tool is registered.
+- **engine-service `POST /catalog`**: returns 200 with `{components: [...]}` for
+  a sample pptx + manifest; the temp pptx is unlinked afterward.
+- **web `getCatalog`** (`lib/engine.ts`): posts `file` + `manifest` to `/catalog`
+  and returns the parsed catalog; a non-200 throws `EngineError`.
+- **web components page**: an authorized owner gets the catalog rendered; a
+  non-owner / unauthenticated request gets "Not found" (same guard as the Use
+  page). `ComponentsClient` renders a component's type/fillable badges, geometry,
+  style, and groups by `source_slide`.
 
 ## Out of scope
 
@@ -233,7 +332,8 @@ Agent -> MCP get_template_components(template_id)
   the cross-slide cloning assembler. R1 only lets the agent *see* components.
 - R3: guardrails (bounding placements, on-brand enforcement), agent tool-doc
   guidance, the bullet/list fix, and box-grow.
-- A web UI surface for the catalog (MCP only, like Theme C geometry).
+- A separate client-side JSON API route for the catalog (the web page renders
+  server-side; add a route when R2 needs client fetch).
 - De-duplicating components that repeat across slides (the agent/R2 decides
   reuse; R1 reports every instance).
 - Gradient/image-fill or multi-run style decomposition (best-effort solid color
