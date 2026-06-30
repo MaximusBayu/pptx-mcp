@@ -1,5 +1,7 @@
 import re
 
+from pptx import Presentation
+
 from .catalog import get_catalog
 from .models import SlotError, Template
 
@@ -35,7 +37,7 @@ def _bbox_ok(b) -> bool:
 def validate_composition(composition_spec: dict, template: Template) -> list[SlotError]:
     cat = get_catalog(template)
     by_id = {c["component_id"]: c for c in cat["components"]}
-    n_slides = 1 + max((c["source_slide"] for c in cat["components"]), default=-1)
+    n_slides = len(Presentation(template.pptx_path).slides)
 
     errors: list[SlotError] = []
     for i, slide in enumerate(composition_spec.get("slides", [])):

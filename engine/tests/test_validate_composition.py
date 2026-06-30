@@ -50,3 +50,28 @@ def test_valid_spec_has_no_errors(sample_template_dir):
         {"component_id": cid, "content": "Hello",
          "bbox_pct": {"x": 5, "y": 5, "w": 50, "h": 20}}]}]}
     assert validate_composition(spec, tpl) == []
+
+
+def test_bool_canvas_rejected(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    cid, _ = _ids(tpl)
+    spec = {"slides": [{"canvas": True, "placements": [{"component_id": cid}]}]}
+    errs = validate_composition(spec, tpl)
+    assert any(e.code == "unknown_canvas" for e in errs)
+
+
+def test_non_int_canvas_rejected(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    cid, _ = _ids(tpl)
+    spec = {"slides": [{"canvas": None, "placements": [{"component_id": cid}]}]}
+    errs = validate_composition(spec, tpl)
+    assert any(e.code == "unknown_canvas" for e in errs)
+
+
+def test_bool_bbox_coord_rejected(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    cid, _ = _ids(tpl)
+    spec = {"slides": [{"canvas": 0, "placements": [
+        {"component_id": cid, "bbox_pct": {"x": True, "y": 0, "w": 50, "h": 50}}]}]}
+    errs = validate_composition(spec, tpl)
+    assert any(e.code == "bad_bbox" for e in errs)
