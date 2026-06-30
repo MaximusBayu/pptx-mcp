@@ -1,3 +1,4 @@
+from .catalog import get_catalog
 from .render import RenderRejected, dry_run, render
 from .schema import get_schema
 from .storage import Storage
@@ -18,6 +19,10 @@ def tool_list_templates(storage: Storage) -> list[dict]:
 
 def tool_get_template_schema(storage: Storage, template_id: str) -> dict:
     return get_schema(storage.load(template_id))
+
+
+def tool_get_template_components(storage: Storage, template_id: str) -> dict:
+    return get_catalog(storage.load(template_id))
 
 
 def tool_render_deck(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
@@ -69,6 +74,12 @@ def build_server(storage: Storage, base_url: str):
     def get_template_schema(template_id: str) -> dict:
         """Get full slot schema for a template."""
         return tool_get_template_schema(storage, template_id)
+
+    @mcp.tool()
+    def get_template_components(template_id: str) -> dict:
+        """List every reusable component (slots, pictures, decor) in a template,
+        with geometry and style — the kit for composing slides."""
+        return tool_get_template_components(storage, template_id)
 
     @mcp.tool()
     def validate_deck(template_id: str, deck_spec: dict) -> dict:

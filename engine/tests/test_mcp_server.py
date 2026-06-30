@@ -3,7 +3,7 @@ import pytest
 from pptx_mcp.storage import Storage
 from pptx_mcp.mcp_server import (
     tool_list_templates, tool_get_template_schema, tool_render_deck,
-    tool_validate_deck,
+    tool_validate_deck, tool_get_template_components,
 )
 
 
@@ -72,3 +72,10 @@ def test_tool_render_preview_timeout_returns_note(storage, monkeypatch):
     monkeypatch.setattr(preview_mod, "preview", boom)
     out = tool_render_preview(storage, "http://x", "sample", _deck())
     assert out == {"validation": [], "previews": [], "note": "preview timed out"}
+
+
+def test_tool_get_template_components(storage):
+    cat = tool_get_template_components(storage, "sample")
+    assert cat["id"] == "sample"
+    assert isinstance(cat["components"], list) and cat["components"]
+    assert all("component_id" in c and "fillable" in c for c in cat["components"])
