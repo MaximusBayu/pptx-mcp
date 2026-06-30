@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
 from pptx_mcp.move import move_shape, move_shapes
-from pptx_mcp.preview import libreoffice_available, preview
+from pptx_mcp.preview import PreviewTimeout, libreoffice_available, preview
 from pptx_mcp.render import RenderRejected, dry_run, render
 from pptx_mcp.shapes import extract_shapes
 from pptx_mcp.validate import validate
@@ -38,7 +38,10 @@ async def base_previews(file: UploadFile = File(...)):
     data = await file.read()
     if not libreoffice_available():
         return {"previews": [], "note": "LibreOffice not available"}
-    pngs = preview(data)  # previews of the base file as-is
+    try:
+        pngs = preview(data)  # previews of the base file as-is
+    except PreviewTimeout:
+        return {"previews": [], "note": "preview timed out"}
     return {"previews": [base64.b64encode(p).decode() for p in pngs]}
 
 
@@ -94,7 +97,10 @@ async def render_preview(file: UploadFile = File(...),
         out, _ = render(json.loads(deck_spec), tpl)
         if not libreoffice_available():
             return {"validation": [], "previews": [], "note": "LibreOffice not available"}
-        pngs = preview(out)
+        try:
+            pngs = preview(out)
+        except PreviewTimeout:
+            return {"validation": [], "previews": [], "note": "preview timed out"}
         return {"validation": [], "previews": [base64.b64encode(p).decode() for p in pngs]}
     finally:
         # Clean up the temp .pptx written by load_from_bytes to avoid leaking files
