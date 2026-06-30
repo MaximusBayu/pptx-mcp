@@ -52,8 +52,11 @@ export function UseClient({ id, name, schema, example, slotCount }: Props) {
     <PageTransition>
       <div className="p-8 max-w-3xl space-y-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Use “{name}”</h1>
-          <a href="/dashboard" className="text-sm text-gray-500 hover:text-black">← Back to my templates</a>
+          <h1 className="text-2xl font-semibold">Use &ldquo;{name}&rdquo;</h1>
+          <a href={`/templates/${id}/components`} className="text-sm text-blue-600 hover:underline">
+            Components
+          </a>
+          <a href="/dashboard" className="text-sm text-gray-500 hover:text-black">&larr; Back to my templates</a>
         </div>
 
         <section className="space-y-2">
@@ -71,7 +74,7 @@ export function UseClient({ id, name, schema, example, slotCount }: Props) {
               <ul className="mt-1 space-y-0.5">
                 {st.slots.map((s: any) => (
                   <li key={s.id} className="text-gray-600">
-                    <code>{s.id}</code> · {s.type}{s.required ? " · required" : ""}
+                    <code>{s.id}</code> &middot; {s.type}{s.required ? " · required" : ""}
                   </li>
                 ))}
                 {st.slots.length === 0 && <li className="text-gray-400">no slots tagged</li>}
