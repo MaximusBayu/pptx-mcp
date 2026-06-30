@@ -2,7 +2,7 @@ import io
 
 from pptx import Presentation
 from pptx_mcp.template import load_template
-from pptx_mcp.assembler import assemble, find_shape
+from pptx_mcp.assembler import assemble, find_shape, _EMBED_ATTR
 
 # Namespace URI for Office Open XML relationships
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -90,6 +90,7 @@ def test_remap_rels_copies_referenced_image_rel(sample_template_dir):
     from pptx_mcp.assembler import _remap_rels
 
     prs = Presentation(str(sample_template_dir / "base.pptx"))
+    assert len(prs.slides) > 3
     src_slide = prs.slides[3]  # image slide
     pic = next(s for s in src_slide.shapes if s.shape_type == 13)
 
@@ -100,8 +101,7 @@ def test_remap_rels_copies_referenced_image_rel(sample_template_dir):
     mapping = _remap_rels(src_slide.part, dest.part, el)
     assert mapping  # at least the blip rel was remapped
 
-    embed_attr = "{%s}embed" % "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-    new_rids = {e.get(embed_attr) for e in el.iter() if e.get(embed_attr)}
+    new_rids = {e.get(_EMBED_ATTR) for e in el.iter() if e.get(_EMBED_ATTR)}
     assert new_rids
     for rid in new_rids:
         assert rid in dest.part.rels  # resolves in the dest part

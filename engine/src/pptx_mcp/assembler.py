@@ -15,15 +15,15 @@ _SLIDE_LAYOUT_RELTYPE_FRAGMENT = "slideLayout"
 
 _EMBED_ATTR = "{%s}embed" % _REL_NS
 _LINK_ATTR = "{%s}link" % _REL_NS
-_ID_ATTR = "{%s}id" % _REL_NS
+_ID_ATTR = "{%s}id" % _REL_NS  # Intentionally the same as _RID_ATTR: both are OOXML r:id attribute
 _REL_ATTRS = (_EMBED_ATTR, _LINK_ATTR, _ID_ATTR)
 
 
 def _remap_rels(src_part, dest_part, element) -> dict:
-    """Copy the relationships *element* references from src_part into dest_part,
-    rewrite the r:embed/r:link/r:id ids on element in place, and return the
-    old_rid -> new_rid map. Slide-layout rels are skipped (already wired via
-    add_slide)."""
+    """Copy the relationships *element* (or its descendants via element.iter())
+    references from src_part into dest_part, rewrite the r:embed/r:link/r:id ids
+    in place, and return the old_rid -> new_rid map. Slide-layout rels are skipped
+    (already wired via add_slide). *element* may be a subtree root (e.g. spTree)."""
     used = set()
     for el in element.iter():
         for attr in _REL_ATTRS:
@@ -79,13 +79,12 @@ def _duplicate_slide(prs: Presentation, src_index: int):
     slide.  Relationship ids in the *source* slide part may differ from those in
     the *destination* part, so this function:
 
-    1. Copies every relationship from the source part into the dest part via
-       ``Part.relate_to``, EXCEPT the slide-layout relationship (which was already
-       wired when ``add_slide(layout)`` was called and must not be duplicated).
-    2. Builds a complete ``old_rid -> new_rid`` map from those copies.
-    3. Rewrites every ``r:embed``, ``r:link``, and ``r:id`` attribute in the
-       copied XML tree using that map, so charts, hyperlinks, and images all
-       resolve correctly in the destination part.
+    1. Deep-copies each source shape element into the dest spTree.
+    2. Calls ``_remap_rels`` which copies only the relationships those shape
+       elements actually reference (r:embed/r:link/r:id), skipping the slide-layout
+       rel, and rewrites the ids in place.
+    3. All charts, hyperlinks, and images now resolve correctly in the destination
+       part via the remapped ids.
     """
     source = prs.slides[src_index]
     layout = source.slide_layout
