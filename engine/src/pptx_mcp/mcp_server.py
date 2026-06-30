@@ -35,7 +35,7 @@ def tool_validate_deck(storage: Storage, template_id: str, deck_spec: dict) -> d
 
 
 def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
-    from .preview import libreoffice_available, preview
+    from .preview import PreviewTimeout, libreoffice_available, preview
     tpl = storage.load(template_id)
     errors = validate(deck_spec, tpl)
     if errors:
@@ -47,9 +47,12 @@ def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_
     if not libreoffice_available():
         return {"validation": [], "previews": [], "note": "LibreOffice not available"}
     urls = []
-    for png in preview(data):
-        token = storage.put_output(png, ".png")
-        urls.append(f"{base_url}/files/{token}")
+    try:
+        for png in preview(data):
+            token = storage.put_output(png, ".png")
+            urls.append(f"{base_url}/files/{token}")
+    except PreviewTimeout:
+        return {"validation": [], "previews": [], "note": "preview timed out"}
     return {"validation": [], "previews": urls}
 
 

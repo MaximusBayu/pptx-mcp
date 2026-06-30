@@ -60,3 +60,15 @@ def test_tool_validate_deck_returns_errors_and_warnings(storage):
     assert "errors" in result and "warnings" in result
     assert isinstance(result["errors"], list)
     assert isinstance(result["warnings"], list)
+
+
+def test_tool_render_preview_timeout_returns_note(storage, monkeypatch):
+    import pptx_mcp.preview as preview_mod
+    from pptx_mcp.preview import PreviewTimeout
+    from pptx_mcp.mcp_server import tool_render_preview
+    monkeypatch.setattr(preview_mod, "libreoffice_available", lambda: True)
+    def boom(_data):
+        raise PreviewTimeout("soffice timed out")
+    monkeypatch.setattr(preview_mod, "preview", boom)
+    out = tool_render_preview(storage, "http://x", "sample", _deck())
+    assert out == {"validation": [], "previews": [], "note": "preview timed out"}
