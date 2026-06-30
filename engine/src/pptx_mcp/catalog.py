@@ -4,7 +4,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 _TEXT_SAMPLE_MAX = 200
 
 
-def _component_type(shp) -> str:
+def component_type(shp) -> str:
     if getattr(shp, "has_table", False):
         return "table"
     if shp.shape_type == MSO_SHAPE_TYPE.PICTURE:
@@ -62,7 +62,7 @@ def _component_dict(shp, slide_index, sw, sh, slot_id) -> dict:
     return {
         "component_id": f"{slide_index}:{shp.shape_id}",
         "source_slide": slide_index,
-        "type": _component_type(shp),
+        "type": component_type(shp),
         "fillable": slot_id is not None,
         "slot_id": slot_id,
         "name": shp.name or "",

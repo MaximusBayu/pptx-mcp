@@ -1,9 +1,14 @@
+import copy
+import io
 import re
 
 from pptx import Presentation
+from pptx.oxml.ns import qn
 
-from .catalog import get_catalog
-from .models import SlotError, Template
+from .assembler import drop_base_slides, find_shape, _remap_rels
+from .catalog import component_type, get_catalog
+from .filler import fill_shape
+from .models import Constraints, SlotError, Template
 
 _CID_RE = re.compile(r"^\d+:\d+$")
 # catalog type -> predicate the content value must satisfy
@@ -61,3 +66,83 @@ def validate_composition(composition_spec: dict, template: Template) -> list[Slo
                 errors.append(SlotError(i, cid, "bad_bbox",
                                         "bbox_pct needs numeric x,y(0-100), w,h(0-100, >0)"))
     return errors
+
+
+def _copy_background(src_slide, dest_slide) -> None:
+    """Copy the canvas slide's slide-level <p:bg> (if any) so the output slide
+    matches the canvas background. If absent, the layout/master bg shows through.
+    """
+    src_csld = src_slide._element.find(qn("p:cSld"))
+    if src_csld is None:
+        return
+    bg = src_csld.find(qn("p:bg"))
+    if bg is None:
+        return
+    dest_csld = dest_slide._element.find(qn("p:cSld"))
+    dest_csld.insert(0, copy.deepcopy(bg))  # schema: bg precedes spTree
+
+
+def _set_geometry(shape, bbox, sw, sh) -> None:
+    shape.left = int(sw * bbox["x"] / 100.0)
+    shape.top = int(sh * bbox["y"] / 100.0)
+    shape.width = int(sw * bbox["w"] / 100.0)
+    shape.height = int(sh * bbox["h"] / 100.0)
+
+
+def compose(composition_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
+    errors = validate_composition(composition_spec, template)
+    if errors:
+        raise ComposeRejected(errors)
+
+    prs = Presentation(template.pptx_path)
+    original_count = len(prs.slides)
+    base_slides = list(prs.slides)[:original_count]
+    sw, sh = prs.slide_width, prs.slide_height
+
+    # slot constraints keyed by (source_slide_index, shape_id) for fill defaults
+    slot_map = {(st.source_slide_index, s.shape_id): s
+                for st in template.slide_types for s in st.slots}
+
+    warnings: list[dict] = []
+    for out_index, slide_spec in enumerate(composition_spec["slides"]):
+        canvas = base_slides[slide_spec["canvas"]]
+        dest = prs.slides.add_slide(canvas.slide_layout)
+        _copy_background(canvas, dest)
+        # strip placeholder shapes add_slide injected from the layout
+        for shp in list(dest.shapes):
+            shp._element.getparent().remove(shp._element)
+
+        for placement in slide_spec.get("placements", []):
+            src_idx, shape_id = (int(x) for x in placement["component_id"].split(":"))
+            src_shape = find_shape(base_slides[src_idx], shape_id)
+            dest.shapes._spTree.append(copy.deepcopy(src_shape._element))
+            _remap_rels(base_slides[src_idx].part, dest.part, dest.shapes._spTree[-1])
+            placed = dest.shapes[-1]
+
+            if "bbox_pct" in placement:
+                _set_geometry(placed, placement["bbox_pct"], sw, sh)
+
+            content = placement.get("content")
+            if content is not None:
+                kind = component_type(placed)
+                slot = slot_map.get((src_idx, shape_id))
+                constraints = slot.constraints if slot is not None else Constraints()
+                for w in fill_shape(dest, placed, kind, content, constraints,
+                                    slot_id=placement["component_id"]):
+                    w.slide_index = out_index
+                    warnings.append(w.to_dict())
+
+    drop_base_slides(prs, original_count)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue(), warnings
+
+
+def compose_dry_run(composition_spec: dict, template: Template) -> dict:
+    """Validate + compose, discard the bytes; return errors and warnings."""
+    try:
+        _bytes, warnings = compose(composition_spec, template)
+    except ComposeRejected as e:
+        return {"errors": [err.to_dict() for err in e.errors], "warnings": []}
+    return {"errors": [], "warnings": warnings}
