@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
+from pptx_mcp.catalog import get_catalog
 from pptx_mcp.move import move_shape, move_shapes
 from pptx_mcp.preview import PreviewTimeout, libreoffice_available, preview
 from pptx_mcp.render import RenderRejected, dry_run, render
@@ -75,6 +76,22 @@ async def validate_deck_route(file: UploadFile = File(...),
     try:
         tpl = load_from_bytes(data, json.loads(manifest))
         result = dry_run(json.loads(deck_spec), tpl)
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return JSONResponse(content=result)
+
+
+@app.post("/catalog")
+async def catalog_route(file: UploadFile = File(...), manifest: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        result = get_catalog(tpl)
     finally:
         if tpl is not None:
             try:

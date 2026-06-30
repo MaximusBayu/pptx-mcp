@@ -117,3 +117,13 @@ def test_render_preview_timeout_returns_note(sample_template_dir, sample_manifes
                     data={"manifest": json.dumps(sample_manifest), "deck_spec": json.dumps(deck)})
     assert r.status_code == 200
     assert r.json() == {"validation": [], "previews": [], "note": "preview timed out"}
+
+
+def test_catalog_endpoint(sample_template_dir, sample_manifest):
+    r = client.post("/catalog", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest)})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == "sample"
+    assert isinstance(body["components"], list) and body["components"]
+    assert all("component_id" in c for c in body["components"])
