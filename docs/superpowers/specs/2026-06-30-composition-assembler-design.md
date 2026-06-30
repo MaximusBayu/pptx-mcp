@@ -106,6 +106,17 @@ engine-service/app.py     MOD  POST /compose  +  POST /validate-composition
 
 `shape_id` is unique per slide, not across a package. Locate the appended shape by **identity** — `dest.shapes[-1]` immediately after the append, before the next placement — rather than re-searching by id. The flow appends and positions one placement fully before the next, so "last appended shape" is unambiguous.
 
+## Background & theme interaction
+
+**The canvas background always wins.** A shape's backdrop is a slide-level `<p:bg>` element, not part of the shape's XML, and `_remap_rels` only copies relationships the shape element itself references. Cloning a component therefore brings the shape but **never its source slide's background**. Output slide built on `canvas: 2` shows slide 2's background regardless of where each placed component came from. To reuse another slide's backdrop, name that slide as the `canvas`.
+
+This is correct and intended (the manifest model), but it creates a **legibility risk** when a component is cloned onto a canvas with a different background:
+
+- **Explicit-color text.** Text with an explicit RGB color (e.g. white, chosen for a dark source slide) keeps that color on a light canvas → can become invisible. The color stays; the backdrop does not follow.
+- **Theme-color text.** Text using a theme color (e.g. `accent1`) re-resolves against the canvas's master/theme. Single-master template → unchanged. Multi-master template → the color may shift.
+
+Neither case breaks rendering — both are quality/contrast issues. **Deferred to R3 guardrails** (font/color lock + contrast check): R3 may re-resolve a cloned component's font color to the canvas theme or emit a `low_contrast` warning when a placed text component lands on a poorly-contrasting canvas background. Computing a slide's effective background (image / gradient / theme fill) is non-trivial and correctly belongs to R3. R2 places mechanically and does not inspect contrast.
+
 ## Validation (`validate_composition`)
 
 `validate_composition(composition_spec, template) -> list[SlotError]`. Reuses `SlotError`. Per slide (index `i`) / placement:
