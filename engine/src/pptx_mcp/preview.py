@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tempfile
@@ -5,6 +6,13 @@ from pathlib import Path
 
 _SOFFICE = shutil.which("soffice") or shutil.which("libreoffice")
 _PDFTOPPM = shutil.which("pdftoppm")
+
+_SOFFICE_TIMEOUT_S = int(os.environ.get("PPTX_SOFFICE_TIMEOUT_S", "60"))
+_PDFTOPPM_TIMEOUT_S = int(os.environ.get("PPTX_PDFTOPPM_TIMEOUT_S", "30"))
+
+
+class PreviewTimeout(RuntimeError):
+    """Raised when a preview subprocess (soffice / pdftoppm) exceeds its timeout."""
 
 
 def libreoffice_available() -> bool:
@@ -24,15 +32,18 @@ def preview(pptx_bytes: bytes) -> list[bytes]:
         tmp = Path(tmp)
         src = tmp / "deck.pptx"
         src.write_bytes(pptx_bytes)
-        subprocess.run(
-            [_SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", str(tmp), str(src)],
-            check=True, capture_output=True,
-        )
-        pdf = tmp / "deck.pdf"
-        if _PDFTOPPM is None:
-            return [pdf.read_bytes()]  # fallback: single PDF "page"
-        subprocess.run(
-            _pdftoppm_cmd(_PDFTOPPM, pdf, tmp / "page"),
-            check=True, capture_output=True,
-        )
+        try:
+            subprocess.run(
+                [_SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", str(tmp), str(src)],
+                check=True, capture_output=True, timeout=_SOFFICE_TIMEOUT_S,
+            )
+            pdf = tmp / "deck.pdf"
+            if _PDFTOPPM is None:
+                return [pdf.read_bytes()]  # fallback: single PDF "page"
+            subprocess.run(
+                _pdftoppm_cmd(_PDFTOPPM, pdf, tmp / "page"),
+                check=True, capture_output=True, timeout=_PDFTOPPM_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise PreviewTimeout(str(e)) from e
         return [p.read_bytes() for p in sorted(tmp.glob("page*.png"))]
