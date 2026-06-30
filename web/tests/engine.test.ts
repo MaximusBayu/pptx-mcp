@@ -46,4 +46,14 @@ describe("engine client", () => {
     expect(out.errors[0].code).toBe("missing_required_slot");
     expect(out.warnings).toEqual([]);
   });
+
+  it("getCatalog posts file+manifest and returns components", async () => {
+    fetchMock.mockResolvedValue(new Response(
+      JSON.stringify({ id: "t", name: "T", description: "", components: [{ component_id: "0:5" }] }),
+      { status: 200, headers: { "content-type": "application/json" } }));
+    const { getCatalog } = await import("@/lib/engine");
+    const out = await getCatalog(Buffer.from("x"), {});
+    expect(out.components[0].component_id).toBe("0:5");
+    expect((fetchMock.mock.calls[0][0] as string)).toContain("/catalog");
+  });
 });

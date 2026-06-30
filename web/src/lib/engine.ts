@@ -94,3 +94,13 @@ export async function validateDeck(pptx: Buffer, manifest: unknown, deckSpec: un
   if (!r.ok) throw new EngineError("validate-deck failed");
   return r.json();
 }
+
+export async function getCatalog(pptx: Buffer, manifest: unknown):
+  Promise<{ id: string; name: string; description: string; components: any[] }> {
+  const r = await fetch(`${BASE}/catalog`, {
+    method: "POST",
+    body: form(pptx, { manifest: JSON.stringify(manifest) }),
+  });
+  if (!r.ok) throw new EngineError("catalog failed");
+  return r.json();
+}
