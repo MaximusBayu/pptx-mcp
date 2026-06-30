@@ -1,4 +1,5 @@
 from .catalog import get_catalog
+from .composer import ComposeRejected, compose, compose_dry_run
 from .render import RenderRejected, dry_run, render
 from .schema import get_schema
 from .storage import Storage
@@ -37,6 +38,22 @@ def tool_render_deck(storage: Storage, base_url: str, template_id: str, deck_spe
 
 def tool_validate_deck(storage: Storage, template_id: str, deck_spec: dict) -> dict:
     return dry_run(deck_spec, storage.load(template_id))
+
+
+def tool_render_composition(storage: Storage, base_url: str, template_id: str,
+                            composition_spec: dict) -> dict:
+    tpl = storage.load(template_id)
+    try:
+        data, warnings = compose(composition_spec, tpl)
+    except ComposeRejected as e:
+        return {"validation": [err.to_dict() for err in e.errors], "download_url": None}
+    token = storage.put_output(data, ".pptx")
+    return {"validation": [], "download_url": f"{base_url}/files/{token}", "warnings": warnings}
+
+
+def tool_validate_composition(storage: Storage, template_id: str,
+                              composition_spec: dict) -> dict:
+    return compose_dry_run(composition_spec, storage.load(template_id))
 
 
 def tool_render_preview(storage: Storage, base_url: str, template_id: str, deck_spec: dict) -> dict:
@@ -95,5 +112,17 @@ def build_server(storage: Storage, base_url: str):
     def render_preview(template_id: str, deck_spec: dict) -> dict:
         """Validate + render preview PNGs; returns validation + preview urls."""
         return tool_render_preview(storage, base_url, template_id, deck_spec)
+
+    @mcp.tool()
+    def render_composition(template_id: str, composition_spec: dict) -> dict:
+        """Compose a slide from catalog components: pick a canvas base slide,
+        place components (from any slide) at target positions, fill content.
+        Returns validation + download_url + warnings."""
+        return tool_render_composition(storage, base_url, template_id, composition_spec)
+
+    @mcp.tool()
+    def validate_composition(template_id: str, composition_spec: dict) -> dict:
+        """Dry-run a composition spec: returns {errors, warnings} without output."""
+        return tool_validate_composition(storage, template_id, composition_spec)
 
     return mcp

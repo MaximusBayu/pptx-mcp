@@ -79,3 +79,24 @@ def test_tool_get_template_components(storage):
     assert cat["id"] == "sample"
     assert isinstance(cat["components"], list) and cat["components"]
     assert all("component_id" in c and "fillable" in c for c in cat["components"])
+
+
+def test_render_composition_ok(storage):
+    from pptx_mcp.mcp_server import tool_render_composition
+    from pptx_mcp.catalog import get_catalog
+    tpl = storage.load("sample")
+    cid = next(c["component_id"] for c in get_catalog(tpl)["components"]
+               if c.get("slot_id") == "title")
+    spec = {"slides": [{"canvas": 0, "placements": [{"component_id": cid, "content": "Hi"}]}]}
+    out = tool_render_composition(storage, "http://x", "sample", spec)
+    assert out["validation"] == []
+    assert out["download_url"].startswith("http://x/files/")
+    assert "warnings" in out
+
+
+def test_validate_composition_returns_errors(storage):
+    from pptx_mcp.mcp_server import tool_validate_composition
+    spec = {"slides": [{"canvas": 99, "placements": []}]}
+    out = tool_validate_composition(storage, "sample", spec)
+    assert "errors" in out and "warnings" in out
+    assert any(e["code"] == "unknown_canvas" for e in out["errors"])
