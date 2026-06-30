@@ -25,14 +25,33 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (tpl.ownerId !== session.user.id) return Response.json({ error: "forbidden" }, { status: 403 });
 
   const { name, description, visibility, slideTypes, moves } = await req.json();
-  const slide_types = (slideTypes ?? []).map((st: any) => ({
-    id: st.id, name: st.name, description: st.description ?? "",
-    source_slide_index: st.source_slide_index,
-    slots: (st.slots ?? []).map((s: any) => ({
-      id: s.id, name: s.name, type: s.type, target: { shape_id: s.shape_id },
-      required: s.required ?? true, default: s.default ?? null, constraints: s.constraints ?? {},
-    })),
-  }));
+
+  const draftSlides: any[] = (tpl.manifestJson as any)?.draft?.slides ?? [];
+  const draftSlide = (idx: number) => draftSlides.find((s) => s.index === idx);
+  const draftShape = (idx: number, shapeId: number) =>
+    draftSlide(idx)?.shapes?.find((x: any) => x.shape_id === shapeId);
+
+  const slide_types = (slideTypes ?? []).map((st: any) => {
+    const ds = draftSlide(st.source_slide_index);
+    return {
+      id: st.id,
+      kind: st.kind || ds?.kind || ds?.suggested_name || "",
+      name: st.name || ds?.suggested_name || `Slide ${(st.source_slide_index ?? 0) + 1}`,
+      description: st.description || ds?.suggested_description || "",
+      repeatable: st.repeatable ?? ds?.repeatable ?? false,
+      source_slide_index: st.source_slide_index,
+      slots: (st.slots ?? []).map((s: any) => {
+        const sh = draftShape(st.source_slide_index, s.shape_id);
+        return {
+          id: s.id, name: s.name, type: s.type, target: { shape_id: s.shape_id },
+          required: s.required ?? true, default: s.default ?? null,
+          constraints: s.constraints ?? {},
+          description: s.description || sh?.suggested_description || "",
+          example: (s.example ?? "") !== "" ? s.example : (sh?.suggested_example ?? ""),
+        };
+      }),
+    };
+  });
   for (const st of slide_types) for (const s of st.slots) {
     if (!s.id) return Response.json({ error: "every slot needs an id" }, { status: 400 });
   }

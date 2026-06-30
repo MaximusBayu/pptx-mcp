@@ -1,6 +1,22 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { TagEditor, slotKey } from "@/components/TagEditor";
+import { TagEditor, slotKey, buildInitialSlots } from "@/components/TagEditor";
+
+it("seeds slot description and example from shape suggestions", () => {
+  const slides = [{
+    index: 0, width_emu: 12192000, height_emu: 6858000,
+    shapes: [{
+      shape_id: 5, name: "Title", type: "text",
+      bbox_pct: { x: 5, y: 5, w: 80, h: 15 },
+      is_candidate: true, suggested_id: "title",
+      suggested_description: "Slide title", suggested_example: "Finding F1",
+    }],
+  }];
+  const slots = buildInitialSlots(slides as any);
+  const slot = slots["0:5"];
+  expect(slot.description).toBe("Slide title");
+  expect(slot.example).toBe("Finding F1");
+});
 
 const slides = [{
   index: 0, width_emu: 100, height_emu: 100,
@@ -39,7 +55,30 @@ describe("TagEditor", () => {
     expect(last[slotKey(0, 5)].id).toBe("title");
   });
 
-  it("drag reports onMove(slideIndex, shapeId, bbox) and fires no fetch", () => {
+  it("resizing the SE handle grows the box and reports onMove", () => {
+    const onMove = vi.fn();
+    render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={() => {}} onMove={onMove} />);
+    const canvas = screen.getByTestId("slide-canvas");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
+      { left: 0, top: 0, width: 640, height: 360, right: 640, bottom: 360, x: 0, y: 0, toJSON() {} } as DOMRect
+    );
+    fireEvent.click(screen.getByRole("button", { name: /shape Title/ })); // select -> handles appear
+    const se = screen.getByLabelText("resize se");
+    fireEvent.pointerDown(se, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(se, { clientX: 64, clientY: 36, pointerId: 1 });
+    fireEvent.pointerUp(se, { clientX: 64, clientY: 36, pointerId: 1 });
+    expect(onMove).toHaveBeenCalled();
+    const [, , bbox] = onMove.mock.calls.at(-1)!;
+    expect(bbox.w).toBeGreaterThan(40); // grew from w=40
+    expect(bbox.h).toBeGreaterThan(20); // grew from h=20
+  });
+
+  it("does not render resize handles until a block is selected", () => {
+    render(<TagEditor slides={slides} previewUrls={["/p0.png"]} onChange={() => {}} onMove={() => {}} />);
+    expect(screen.queryByLabelText("resize se")).toBeNull();
+  });
+
+  it("pointer-drag reports onMove(slideIndex, shapeId, bbox), no rebound, no fetch", () => {
     const onMove = vi.fn();
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(new Response("{}") as any);
     render(
@@ -50,56 +89,16 @@ describe("TagEditor", () => {
       { left: 0, top: 0, width: 640, height: 360, right: 640, bottom: 360, x: 0, y: 0, toJSON() {} } as DOMRect
     );
     const box = screen.getByRole("button", { name: /shape Title/ });
-    // framer-motion's onDragEnd does not fire from synthetic pointer events under
-    // jsdom (its gesture recogniser requires real pointer capture). Per the brief,
-    // we invoke the drag handler directly via the React fiber's onDragEnd prop,
-    // which exercises the real handleDragEnd code path in the component.
-    const fiberKey = Object.keys(box).find((k) => k.startsWith("__reactFiber$"));
-    const fiber = fiberKey ? (box as any)[fiberKey] : null;
-    // Walk the fiber tree to find the motion element with onDragEnd
-    let node = fiber;
-    let dragEndHandler: ((e: PointerEvent, info: any) => void) | null = null;
-    while (node) {
-      const props = node.memoizedProps;
-      if (props?.onDragEnd) {
-        dragEndHandler = props.onDragEnd;
-        break;
-      }
-      node = node.child ?? node.return;
-      if (node === fiber) break;
-    }
-    if (!dragEndHandler) {
-      // Fallback: find it in pendingProps up the fiber chain
-      node = fiber;
-      while (node) {
-        const props = node.pendingProps;
-        if (props?.onDragEnd) {
-          dragEndHandler = props.onDragEnd;
-          break;
-        }
-        node = node.return;
-      }
-    }
-    // Invoke the handler with a synthetic PanInfo representing a 64px right, 36px down drag.
-    // All assertions below test the real handleDragEnd logic — no fetch, correct arity, bbox moved right.
-    if (dragEndHandler) {
-      dragEndHandler(new PointerEvent("pointerup"), {
-        offset: { x: 64, y: 36 },
-        delta: { x: 64, y: 36 },
-        point: { x: 64, y: 36 },
-        velocity: { x: 0, y: 0 },
-      });
-    } else {
-      // If fiber walk failed, fall back to pointer events (will fail if framer doesn't cooperate)
-      fireEvent.pointerDown(box, { clientX: 0, clientY: 0, buttons: 1 });
-      fireEvent.pointerMove(box, { clientX: 64, clientY: 36, buttons: 1 });
-      fireEvent.pointerUp(box, { clientX: 64, clientY: 36 });
-    }
+    fireEvent.pointerDown(box, { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(box, { clientX: 64, clientY: 36, pointerId: 1 });
+    fireEvent.pointerUp(box, { clientX: 64, clientY: 36, pointerId: 1 });
     expect(onMove).toHaveBeenCalled();
     const [si, sid, bbox] = onMove.mock.calls.at(-1)!;
     expect(si).toBe(0);
     expect(sid).toBe(5);
     expect(bbox.x).toBeGreaterThan(10); // moved right from x=10
+    // box position is committed via left/top — no framer transform residue
+    expect((box as HTMLElement).style.transform === "" || (box as HTMLElement).style.transform == null).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

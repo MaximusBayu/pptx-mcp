@@ -1,16 +1,36 @@
 "use client";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TagEditor, type PlacementIssues } from "@/components/TagEditor";
+import { TagEditor, type PlacementIssues, type SlideMeta } from "@/components/TagEditor";
+import { UploadProgress } from "@/components/UploadProgress";
 import type { DraftSlot } from "@/components/SlotPanel";
 import { PageTransition } from "@/lib/motion/PageTransition";
 
 type SaveState = "idle" | "saving" | "saved";
 
-export function EditClient({ id, name, slides, previewUrls }:
-  { id: string; name: string; slides: any[]; previewUrls: string[] }) {
+export function EditClient({ id, name, slides, previewUrls, previewsPending }:
+  { id: string; name: string; slides: any[]; previewUrls: string[]; previewsPending?: boolean }) {
   const router = useRouter();
+  const [urls, setUrls] = useState<string[]>(previewUrls);
+  const [renderState, setRenderState] = useState<"idle" | "rendering" | "error">(
+    previewsPending ? "rendering" : "idle",
+  );
+  const renderPreviews = useCallback(async () => {
+    setRenderState("rendering");
+    try {
+      const r = await fetch(`/api/templates/${id}/base-previews`, { method: "POST" });
+      if (!r.ok) throw new Error("render failed");
+      const data = await r.json();
+      setUrls(data.previewUrls ?? []);
+      setRenderState("idle");
+    } catch {
+      setRenderState("error");
+    }
+  }, [id]);
+  useEffect(() => {
+    if (previewsPending) renderPreviews();
+  }, [previewsPending, renderPreviews]);
   const [slots, setSlots] = useState<Record<string, DraftSlot>>({});
   const [saveErr, setSaveErr] = useState("");
   const [overlapWarn, setOverlapWarn] = useState("");
@@ -18,6 +38,21 @@ export function EditClient({ id, name, slides, previewUrls }:
   const [issues, setIssues] = useState<PlacementIssues>({ offSlide: [], overlapping: [] });
 
   const handleIssues = useCallback((next: PlacementIssues) => setIssues(next), []);
+
+  const [slideMeta, setSlideMeta] = useState<Record<number, SlideMeta>>(() => {
+    const m: Record<number, SlideMeta> = {};
+    for (const sl of slides) {
+      m[sl.index] = {
+        name: sl.suggested_name ?? "",
+        description: sl.suggested_description ?? "",
+        repeatable: sl.repeatable ?? false,
+      };
+    }
+    return m;
+  });
+  function onSlideMeta(slideIndex: number, meta: SlideMeta) {
+    setSlideMeta((m) => ({ ...m, [slideIndex]: meta }));
+  }
 
   const [moves, setMoves] = useState<Record<string, { slide_index: number; shape_id: number; bbox_pct: { x: number; y: number; w: number; h: number } }>>({});
 
@@ -29,21 +64,36 @@ export function EditClient({ id, name, slides, previewUrls }:
     setSaveErr("");
     setOverlapWarn("");
 
-    const warnings: string[] = [];
-    if (issues.offSlide.length > 0)
-      warnings.push(`Off-slide (intentional bleed?): ${issues.offSlide.join(", ")}`);
-    if (issues.overlapping.length > 0)
-      warnings.push(`Overlapping: ${issues.overlapping.map((p) => p.join("+")).join(", ")}`);
-    if (warnings.length) setOverlapWarn(warnings.join(" · "));
+    // Off-slide is a soft heads-up (bleed is often intentional). Overlap is not
+    // warned: layered slide designs overlap by nature, so it was pure noise.
+    // De-dupe ids and cap the list so a dense deck can't spam a wall of text.
+    const offIds = Array.from(new Set(issues.offSlide));
+    if (offIds.length > 0) {
+      const shown = offIds.slice(0, 8).join(", ");
+      const more = offIds.length > 8 ? ` +${offIds.length - 8} more` : "";
+      setOverlapWarn(`Off-slide (intentional bleed?): ${shown}${more}`);
+    }
 
     setSaveState("saving");
     try {
-      const slideTypes = slides.map((_sl, idx) => ({
-        id: `slide_${idx}`, name: `Slide ${idx + 1}`, source_slide_index: idx,
-        // Use slot.slideIndex (the composite-key slide) instead of shape_id match to
-        // avoid cross-slide collision when two slides share the same shape_id value.
-        slots: Object.values(slots).filter((s) => s.slideIndex === idx && s.id),
-      }));
+      const slideTypes = slides.map((_sl, idx) => {
+        const meta = slideMeta[idx];
+        return {
+          id: `slide_${idx}`,
+          kind: (_sl as any)?.kind ?? "",
+          name: meta?.name ?? "",
+          description: meta?.description ?? "",
+          repeatable: meta?.repeatable ?? false,
+          source_slide_index: idx,
+          slots: Object.values(slots)
+            .filter((s) => s.slideIndex === idx && s.id)
+            .map((s) => ({
+              id: s.id, name: s.name, type: s.type, shape_id: s.shape_id,
+              constraints: s.constraints,
+              description: s.description ?? "", example: s.example ?? "",
+            })),
+        };
+      });
       const res = await fetch(`/api/templates/${id}`, {
         method: "PUT",
         body: JSON.stringify({ name, slideTypes, moves: Object.values(moves) }),
@@ -89,18 +139,28 @@ export function EditClient({ id, name, slides, previewUrls }:
               : `${taggedCount} slot${taggedCount === 1 ? "" : "s"} tagged.`}
           </p>
         </div>
-        <TagEditor
-          slides={slides}
-          previewUrls={previewUrls}
-          onChange={setSlots}
-          onMove={onMove}
-          onIssues={handleIssues}
-        />
+        {renderState === "rendering" ? (
+          <UploadProgress stage="Rendering previews…" />
+        ) : renderState === "error" ? (
+          <div className="space-y-2">
+            <p className="text-red-600 text-sm">Preview render failed.</p>
+            <button onClick={renderPreviews} className="btn-primary">Retry</button>
+          </div>
+        ) : (
+          <TagEditor
+            slides={slides}
+            previewUrls={urls}
+            onChange={setSlots}
+            onMove={onMove}
+            onIssues={handleIssues}
+            onSlideMeta={onSlideMeta}
+          />
+        )}
         <div className="flex items-center gap-3 flex-wrap">
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={save}
-            disabled={saveState !== "idle"}
+            disabled={saveState !== "idle" || renderState === "rendering"}
             className="btn-primary disabled:opacity-50"
           >
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved ✓" : "Save template"}

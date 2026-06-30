@@ -3,6 +3,7 @@ import pytest
 from pptx_mcp.storage import Storage
 from pptx_mcp.mcp_server import (
     tool_list_templates, tool_get_template_schema, tool_render_deck,
+    tool_validate_deck,
 )
 
 
@@ -38,8 +39,8 @@ def test_render_deck_ok(storage):
 
 
 def test_render_deck_invalid(storage):
-    # Tables still reject; text overflow now produces warnings (non-fatal)
-    bad = {"slides": [{"slide_type": "table", "slots": {"data": [["a"]] * 10}}]}
+    # Column overflow still rejects; row overflow is now allowed (grows the grid)
+    bad = {"slides": [{"slide_type": "table", "slots": {"data": [[1, 2, 3, 4, 5]]}}]}
     out = tool_render_deck(storage, "http://x", "sample", bad)
     assert out["download_url"] is None
     assert out["validation"][0]["code"] == "table_overflow"
@@ -51,3 +52,23 @@ def test_render_deck_text_overflow_warns(storage):
     out = tool_render_deck(storage, "http://x", "sample", bad)
     assert out["download_url"] is not None
     assert any(w["code"] == "text_truncated" for w in out["warnings"])
+
+
+def test_tool_validate_deck_returns_errors_and_warnings(storage):
+    # Use the same storage + template_id the existing mcp_server tests use.
+    result = tool_validate_deck(storage, "sample", {"slides": []})
+    assert "errors" in result and "warnings" in result
+    assert isinstance(result["errors"], list)
+    assert isinstance(result["warnings"], list)
+
+
+def test_tool_render_preview_timeout_returns_note(storage, monkeypatch):
+    import pptx_mcp.preview as preview_mod
+    from pptx_mcp.preview import PreviewTimeout
+    from pptx_mcp.mcp_server import tool_render_preview
+    monkeypatch.setattr(preview_mod, "libreoffice_available", lambda: True)
+    def boom(_data):
+        raise PreviewTimeout("soffice timed out")
+    monkeypatch.setattr(preview_mod, "preview", boom)
+    out = tool_render_preview(storage, "http://x", "sample", _deck())
+    assert out == {"validation": [], "previews": [], "note": "preview timed out"}

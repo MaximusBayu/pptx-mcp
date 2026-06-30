@@ -52,3 +52,4 @@ Thumbs.db
 *.sqlite3
 *.db
 .playwright*
+template example/

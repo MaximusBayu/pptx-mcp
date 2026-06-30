@@ -138,6 +138,18 @@ links.
 
 ---
 
+## Minting an API key (operator)
+
+For headless/automated agents that cannot log into the web app:
+
+    cd web
+    npm run mcp:key -- --email user@example.com
+
+Prints a `pk_...` key (shown once — store it immediately). Interactive users can
+instead self-serve at **Settings → API Keys** in the web app.
+
+---
+
 ## Stopping the stack
 
 ```bash

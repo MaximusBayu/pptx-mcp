@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateApiKey } from "@/lib/apiKey";
+import { mintApiKey } from "@/lib/apiKey";
 
 export async function GET() {
   const session = await auth();
@@ -20,20 +20,6 @@ export async function POST() {
   const count = await prisma.apiKey.count({ where: { userId } });
   if (count >= 20) return Response.json({ error: "key limit reached (max 20)" }, { status: 422 });
 
-  let { raw, prefix, hash } = await generateApiKey();
-  try {
-    await prisma.apiKey.create({ data: { userId, prefix, hash } });
-  } catch (err: any) {
-    if (err?.code === "P2002") {
-      ({ raw, prefix, hash } = await generateApiKey());
-      try {
-        await prisma.apiKey.create({ data: { userId, prefix, hash } });
-      } catch {
-        return Response.json({ error: "failed to generate unique key" }, { status: 409 });
-      }
-    } else {
-      throw err;
-    }
-  }
+  const raw = await mintApiKey(userId);
   return Response.json({ raw }, { status: 201 });
 }

@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse, Response
 from pptx_mcp.autodetect import autodetect
 from pptx_mcp.bytesio import load_from_bytes
 from pptx_mcp.move import move_shape, move_shapes
-from pptx_mcp.preview import libreoffice_available, preview
-from pptx_mcp.render import RenderRejected, render
+from pptx_mcp.preview import PreviewTimeout, libreoffice_available, preview
+from pptx_mcp.render import RenderRejected, dry_run, render
 from pptx_mcp.shapes import extract_shapes
 from pptx_mcp.validate import validate
 
@@ -38,7 +38,10 @@ async def base_previews(file: UploadFile = File(...)):
     data = await file.read()
     if not libreoffice_available():
         return {"previews": [], "note": "LibreOffice not available"}
-    pngs = preview(data)  # previews of the base file as-is
+    try:
+        pngs = preview(data)  # previews of the base file as-is
+    except PreviewTimeout:
+        return {"previews": [], "note": "preview timed out"}
     return {"previews": [base64.b64encode(p).decode() for p in pngs]}
 
 
@@ -64,6 +67,23 @@ async def render_deck(file: UploadFile = File(...),
                     headers={"X-Overflow-Warnings": json.dumps(warnings)})
 
 
+@app.post("/validate-deck")
+async def validate_deck_route(file: UploadFile = File(...),
+                              manifest: str = Form(...), deck_spec: str = Form(...)):
+    data = await file.read()
+    tpl = None
+    try:
+        tpl = load_from_bytes(data, json.loads(manifest))
+        result = dry_run(json.loads(deck_spec), tpl)
+    finally:
+        if tpl is not None:
+            try:
+                os.unlink(tpl.pptx_path)
+            except OSError:
+                pass
+    return JSONResponse(content=result)
+
+
 @app.post("/render-preview")
 async def render_preview(file: UploadFile = File(...),
                          manifest: str = Form(...), deck_spec: str = Form(...)):
@@ -77,7 +97,10 @@ async def render_preview(file: UploadFile = File(...),
         out, _ = render(json.loads(deck_spec), tpl)
         if not libreoffice_available():
             return {"validation": [], "previews": [], "note": "LibreOffice not available"}
-        pngs = preview(out)
+        try:
+            pngs = preview(out)
+        except PreviewTimeout:
+            return {"validation": [], "previews": [], "note": "preview timed out"}
         return {"validation": [], "previews": [base64.b64encode(p).decode() for p in pngs]}
     finally:
         # Clean up the temp .pptx written by load_from_bytes to avoid leaking files

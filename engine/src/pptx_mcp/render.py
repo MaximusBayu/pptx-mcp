@@ -1,7 +1,7 @@
 import io
 
 from .assembler import assemble
-from .filler import fill_slot
+from .filler import clear_slot, fill_slot
 from .models import SlotError, Template
 from .validate import validate
 
@@ -28,6 +28,7 @@ def render(deck_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
         for slot in st.slots:
             value = provided.get(slot.id, slot.default)
             if value is None or value == "":
+                clear_slot(prs.slides[i], slot)
                 continue
             for w in fill_slot(prs.slides[i], slot, value):
                 w.slide_index = i
@@ -36,3 +37,17 @@ def render(deck_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
     buf = io.BytesIO()
     prs.save(buf)
     return buf.getvalue(), warnings
+
+
+def dry_run(deck_spec: dict, template: Template) -> dict:
+    """Validate + fill without producing output; return errors and warnings.
+
+    Reuses render() (which fills every slot) and discards the bytes, so callers
+    get the same constraint errors and truncation warnings a real render would,
+    without a download or a LibreOffice preview.
+    """
+    try:
+        _bytes, warnings = render(deck_spec, template)
+    except RenderRejected as e:
+        return {"errors": [err.to_dict() for err in e.errors], "warnings": []}
+    return {"errors": [], "warnings": warnings}

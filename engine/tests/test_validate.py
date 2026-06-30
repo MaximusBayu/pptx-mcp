@@ -47,8 +47,39 @@ def test_text_shrink_not_error(sample_template_dir):
     assert errs == []
 
 
-def test_table_overflow_rejects(sample_template_dir):
+def test_table_col_overflow_rejects(sample_template_dir):
     tpl = load_template(sample_template_dir)
-    rows = [[1, 2]] * 9  # max_rows 5
+    rows = [[1, 2, 3, 4, 5]]  # 5 cols > max_cols 4
     errs = validate({"slides": [{"slide_type": "table", "slots": {"data": rows}}]}, tpl)
     assert any(e.code == "table_overflow" for e in errs)
+
+
+def test_table_row_overflow_not_rejected(sample_template_dir):
+    # rows over max_rows are no longer a validation error (filler grows the grid)
+    tpl = load_template(sample_template_dir)
+    rows = [[1, 2]] * 9  # 9 > max_rows 5
+    errs = validate({"slides": [{"slide_type": "table", "slots": {"data": rows}}]}, tpl)
+    assert not any(e.code == "table_overflow" for e in errs)
+    assert errs == []
+
+
+def test_wrong_type_message_names_the_type(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    errs = validate({"slides": [{"slide_type": "title", "slots": {"title": 123}}]}, tpl)
+    e = next(e for e in errs if e.code == "wrong_type")
+    assert "text" in e.message and "int" in e.message
+
+
+def test_table_col_overflow_message_has_numbers(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    rows = [[1, 2, 3, 4, 5]]  # 5 cols > max_cols 4
+    errs = validate({"slides": [{"slide_type": "table", "slots": {"data": rows}}]}, tpl)
+    e = next(e for e in errs if e.code == "table_overflow")
+    assert "4" in e.message and "5" in e.message
+
+
+def test_image_invalid_message_names_the_type(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    errs = validate({"slides": [{"slide_type": "image", "slots": {"photo": 5}}]}, tpl)
+    e = next(e for e in errs if e.code == "image_invalid")
+    assert "int" in e.message

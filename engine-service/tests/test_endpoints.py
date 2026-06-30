@@ -71,3 +71,49 @@ def test_move_shapes_endpoint():
                     data={"moves": json.dumps(moves)})
     assert r.status_code == 200
     assert r.content[:2] == b"PK"
+
+
+def test_validate_deck_ok(sample_template_dir, sample_manifest):
+    deck_spec = {"slides": [{"slide_type": "title", "slots": {"title": "Hi", "subtitle": "Yo"}}]}
+    r = client.post("/validate-deck", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "deck_spec": json.dumps(deck_spec)})
+    assert r.status_code == 200
+    body = r.json()
+    assert "errors" in body and "warnings" in body
+    assert body["errors"] == []
+
+
+def test_validate_deck_reports_errors(sample_template_dir, sample_manifest):
+    # An invalid deck (unknown slide_type) -> 200 with errors in the body.
+    r = client.post("/validate-deck", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest),
+                          "deck_spec": json.dumps({"slides": [{"slide_type": "nope", "slots": {}}]})})
+    assert r.status_code == 200
+    assert len(r.json()["errors"]) >= 1
+
+
+def test_render_base_previews_timeout_returns_note(sample_template_dir, monkeypatch):
+    import app as app_mod
+    from pptx_mcp.preview import PreviewTimeout
+    monkeypatch.setattr(app_mod, "libreoffice_available", lambda: True)
+    def boom(_data):
+        raise PreviewTimeout("soffice timed out")
+    monkeypatch.setattr(app_mod, "preview", boom)
+    r = client.post("/render-base-previews", files=_files(sample_template_dir))
+    assert r.status_code == 200
+    assert r.json() == {"previews": [], "note": "preview timed out"}
+
+
+def test_render_preview_timeout_returns_note(sample_template_dir, sample_manifest, monkeypatch):
+    import app as app_mod
+    from pptx_mcp.preview import PreviewTimeout
+    monkeypatch.setattr(app_mod, "libreoffice_available", lambda: True)
+    def boom(_data):
+        raise PreviewTimeout("soffice timed out")
+    monkeypatch.setattr(app_mod, "preview", boom)
+    deck = {"slides": [{"slide_type": "title", "slots": {"title": "Hi", "subtitle": "Yo"}}]}
+    r = client.post("/render-preview", files=_files(sample_template_dir),
+                    data={"manifest": json.dumps(sample_manifest), "deck_spec": json.dumps(deck)})
+    assert r.status_code == 200
+    assert r.json() == {"validation": [], "previews": [], "note": "preview timed out"}

@@ -30,17 +30,20 @@ def validate(deck_spec: dict, template: Template) -> list[SlotError]:
 def _check_value(i: int, slot, value) -> list[SlotError]:
     if slot.type == "text":
         if not isinstance(value, str):
-            return [SlotError(i, slot.id, "wrong_type", "expected text (str)")]
+            return [SlotError(i, slot.id, "wrong_type",
+                              f"expected text (str), got {type(value).__name__}")]
         decision, msg = assess_text(value, slot.constraints)
         if decision == "reject":
             return [SlotError(i, slot.id, "text_overflow", msg)]
     elif slot.type == "table":
         if not (isinstance(value, list) and all(isinstance(r, list) for r in value)):
-            return [SlotError(i, slot.id, "wrong_type", "expected table (list[list])")]
+            return [SlotError(i, slot.id, "wrong_type",
+                              f"expected table (list[list]), got {type(value).__name__}")]
         decision, msg = assess_table(value, slot.constraints)
         if decision == "reject":
             return [SlotError(i, slot.id, "table_overflow", msg)]
     elif slot.type == "image":
         if not value or not isinstance(value, (str, bytes)):
-            return [SlotError(i, slot.id, "image_invalid", "expected image str/bytes")]
+            return [SlotError(i, slot.id, "image_invalid",
+                              f"expected image URL or base64 string, got {type(value).__name__}")]
     return []

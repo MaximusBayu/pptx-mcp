@@ -3,6 +3,7 @@
 // Each slot's example value must match the type the engine validates:
 // text -> string, table -> string[][], image -> a URL/base64 string.
 export function exampleSlotValue(s: any): unknown {
+  if (s.example != null && s.example !== "") return s.example;
   if (s.default != null) return s.default;
   if (s.type === "table") {
     return [

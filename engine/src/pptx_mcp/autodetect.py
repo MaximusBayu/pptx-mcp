@@ -1,4 +1,6 @@
 import io
+import re
+from collections import Counter
 from dataclasses import dataclass
 
 from pptx import Presentation
@@ -12,6 +14,7 @@ GLYPH_W = 0.5
 LINE_H = 1.2
 DEFAULT_FONT_PT = 18.0
 EMU_PER_PT = 12700
+TABLE_OVERLAP_TAU = 0.6
 
 _DECO_TYPES = {MSO_SHAPE_TYPE.FREEFORM, MSO_SHAPE_TYPE.GROUP, MSO_SHAPE_TYPE.LINE}
 _MIN_AREA_PCT = 1.0
@@ -33,6 +36,88 @@ class ShapeAssessment:
     confidence: float
     is_candidate: bool
     font_pt: float | None
+
+
+_EXAMPLE_MAX = 200
+
+_DESC_BY_ID = {
+    "title": "Slide title",
+    "subtitle": "Subtitle",
+    "body": "Body text",
+}
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def slot_description(suggested_id: str) -> str:
+    """A short human label for a slot, derived from its auto-assigned id."""
+    if suggested_id in _DESC_BY_ID:
+        return _DESC_BY_ID[suggested_id]
+    if suggested_id.startswith("table"):
+        return "Table data"
+    if suggested_id.startswith("image"):
+        return "Image"
+    return "Text"
+
+
+_AGENDA_RE = re.compile(r"agenda|overview|outline|contents|daftar isi", re.I)
+_SUMMARY_RE = re.compile(r"summary|ringkasan|executive", re.I)
+_FINDING_RE = re.compile(r"finding|temuan|severity|critical|high|medium|low|cwe|cvss", re.I)
+_CLOSING_RE = re.compile(r"thank|terima kasih|questions|q&a", re.I)
+
+_KIND_LABEL = {
+    "cover": "Cover slide", "agenda": "Agenda slide", "summary": "Summary slide",
+    "finding": "Finding slide", "data": "Data slide", "closing": "Closing slide",
+    "section": "Section slide", "content": "Content slide",
+}
+
+REPEATABLE_KINDS = {"finding", "content"}
+
+
+def slide_kind(text_blob: str, has_table: bool, index: int,
+               num_text: int, has_subtitle: bool) -> str:
+    """Deterministic slide purpose from its dominant text + shape mix."""
+    if index == 0 or (has_subtitle and num_text <= 3):
+        return "cover"
+    if _AGENDA_RE.search(text_blob):
+        return "agenda"
+    if _SUMMARY_RE.search(text_blob):
+        return "summary"
+    if _FINDING_RE.search(text_blob):
+        return "finding"
+    if has_table:
+        return "data"
+    if _CLOSING_RE.search(text_blob):
+        return "closing"
+    if num_text <= 1:
+        return "section"
+    return "content"
+
+
+def slide_description(kind: str, slot_ids: list[str]) -> str:
+    """A templated sentence: what the slide is + which slots to fill."""
+    fill = ", ".join(slot_ids) if slot_ids else "no slots"
+    repeat = " Repeat per item." if kind in REPEATABLE_KINDS else ""
+    label = _KIND_LABEL.get(kind, "Content slide")
+    return f"{label} — fill: {fill}.{repeat}"
+
+
+def slide_signature(slide: dict) -> tuple:
+    """A structural fingerprint of a slide's candidate shapes. Two slides with
+    the same signature are the same template pattern repeated (e.g. F1-F4
+    findings) and are flagged repeatable."""
+    cand = [s for s in slide["shapes"] if s.get("is_candidate")]
+    parts = tuple(sorted(
+        (s["type"], round((s["bbox_pct"]["w"] * s["bbox_pct"]["h"]) / 10))
+        for s in cand
+    ))
+    sids = tuple(sorted({s["suggested_id"] for s in cand if s["suggested_id"]}))
+    return (parts, sids)
 
 
 def _shape_text(shape) -> str:
@@ -149,12 +234,44 @@ def estimate_max_chars(width_emu, height_emu, font_pt) -> tuple[int, int]:
     return chars_per_line * lines, lines
 
 
+def _rect_overlap_frac(a: dict, b: dict) -> float:
+    """Fraction of rect a's area that lies inside rect b.
+
+    a, b are bbox_pct dicts (x, y, w, h). Axis-aligned intersection area
+    divided by area(a); 0.0 when a has no area or the rects are disjoint.
+    """
+    area_a = a["w"] * a["h"]
+    if area_a <= 0:
+        return 0.0
+    ix = max(0.0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]))
+    iy = max(0.0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
+    return (ix * iy) / area_a
+
+
+def _demote_text_in_tables(assessments: list["ShapeAssessment"]) -> None:
+    """Demote any text candidate that sits >= TABLE_OVERLAP_TAU inside a table
+    candidate's bbox, so the table owns that region and the overlapping text
+    never becomes a fillable slot. Mutates assessments in place; tables are
+    never demoted. A title/label beside or above a table (little overlap) stays.
+    """
+    tables = [a.bbox_pct for a in assessments if a.is_candidate and a.type == "table"]
+    if not tables:
+        return
+    for a in assessments:
+        if not (a.is_candidate and a.type == "text"):
+            continue
+        if any(_rect_overlap_frac(a.bbox_pct, t) >= TABLE_OVERLAP_TAU for t in tables):
+            a.is_candidate = False
+            a.confidence = round(min(a.confidence, TAU - 0.001), 3)
+
+
 def autodetect(pptx_bytes: bytes) -> dict:
     prs = Presentation(io.BytesIO(pptx_bytes))
     sw, sh = prs.slide_width, prs.slide_height
     slides = []
     for i, slide in enumerate(prs.slides):
         assessments = [classify_shape(shp, sw, sh) for shp in slide.shapes]
+        _demote_text_in_tables(assessments)
         ids = derive_ids([a for a in assessments if a.is_candidate])
         shape_by_id = {shp.shape_id: shp for shp in slide.shapes}
         shapes = []
@@ -168,16 +285,42 @@ def autodetect(pptx_bytes: bytes) -> dict:
                 if getattr(shp, "has_table", False):
                     mr = len(shp.table.rows)
                     mcols = len(shp.table.columns)
+            shp_obj = shape_by_id[a.shape_id]
+            text_val = _truncate(_shape_text(shp_obj), _EXAMPLE_MAX)
+            sid = ids.get(a.shape_id, "")
+            example = ""
+            if a.is_candidate and a.type == "text" and text_val:
+                example = _truncate(text_val, mc if mc > 0 else _EXAMPLE_MAX)
             shapes.append({
                 "shape_id": a.shape_id, "name": a.name, "type": a.type,
                 "bbox_pct": a.bbox_pct, "confidence": a.confidence,
                 "is_candidate": a.is_candidate,
-                "suggested_id": ids.get(a.shape_id, ""),
+                "suggested_id": sid,
                 "suggested_max_chars": mc, "suggested_max_lines": ml,
                 "suggested_max_rows": mr, "suggested_max_cols": mcols,
                 "font_pt": a.font_pt,
+                "text": text_val,
+                "suggested_example": example,
+                "suggested_description": slot_description(sid),
             })
-        slides.append({"index": i, "width_emu": sw, "height_emu": sh, "shapes": shapes})
+        cand = [a for a in assessments if a.is_candidate]
+        text_blob = " ".join(
+            _shape_text(shape_by_id[a.shape_id]) for a in cand if a.type == "text"
+        )
+        has_table = any(a.type == "table" for a in cand)
+        num_text = sum(1 for a in cand if a.type == "text")
+        has_subtitle = any(ids.get(a.shape_id) == "subtitle" for a in cand)
+        slot_ids = [ids[a.shape_id] for a in cand if ids.get(a.shape_id)]
+        kind = slide_kind(text_blob, has_table, i, num_text, has_subtitle)
+        slides.append({
+            "index": i, "width_emu": sw, "height_emu": sh, "shapes": shapes,
+            "kind": kind, "suggested_name": kind,
+            "suggested_description": slide_description(kind, slot_ids),
+        })
+    sigs = [slide_signature(s) for s in slides]
+    counts = Counter(sigs)
+    for s, sig in zip(slides, sigs):
+        s["repeatable"] = counts[sig] >= 2 or s["kind"] in REPEATABLE_KINDS
     return {"slides": slides}
 
 
