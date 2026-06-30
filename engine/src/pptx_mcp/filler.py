@@ -10,7 +10,7 @@ from pptx.util import Emu, Length, Pt
 
 from .assembler import find_shape
 from .autodetect import LINE_H, estimate_max_chars
-from .models import Slot, SlotError
+from .models import Constraints, Slot, SlotError
 from .tablefit import MIN_COL_FRAC, MIN_ROW_FRAC, redistribute
 from .textfit import fit_text, truncate_to_sentence
 
@@ -46,15 +46,29 @@ def load_image_bytes(value) -> bytes:
         return fh.read()
 
 
+def fill_shape(slide, shape, kind: str, value, constraints: Constraints,
+               slot_id: str | None = None) -> list[SlotError]:
+    """Fill an arbitrary shape by content kind, using `constraints` directly.
+
+    No dependency on a deck Slot — `composer` calls this for placement content.
+    text/table/image dispatch to the existing fill helpers; any other kind is a
+    no-op (decor placed verbatim).
+    """
+    if kind == "text":
+        synthetic = Slot(id=slot_id or "", name="", type="text",
+                         shape_id=shape.shape_id, constraints=constraints)
+        return _fill_text(shape, synthetic, value)
+    if kind == "table":
+        return _fill_table(shape, value)
+    if kind == "image":
+        _fill_image(slide, shape, value, constraints.fit)
+        return []
+    return []
+
+
 def fill_slot(slide, slot: Slot, value) -> list[SlotError]:
     shape = find_shape(slide, slot.shape_id)
-    if slot.type == "text":
-        return _fill_text(shape, slot, value)
-    if slot.type == "table":
-        return _fill_table(shape, value)
-    if slot.type == "image":
-        _fill_image(slide, shape, value, slot.constraints.fit)
-    return []
+    return fill_shape(slide, shape, slot.type, value, slot.constraints, slot.id)
 
 
 def clear_slot(slide, slot: Slot) -> None:

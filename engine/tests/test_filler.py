@@ -258,3 +258,39 @@ def test_fill_table_no_grow_warning_when_it_fits():
     prs, slide, gf, table = _deck_with_table(4, 2)
     warnings = _fill_table(gf, [["A0", "A1"], ["B0", "B1"]])
     assert not any(w.code == "table_autogrew" for w in warnings)
+
+
+def test_fill_shape_text_truncates_and_warns(sample_template_dir):
+    from pptx import Presentation
+    from pptx_mcp.filler import fill_shape
+    from pptx_mcp.models import Constraints
+    prs = Presentation(str(sample_template_dir / "base.pptx"))
+    slide = prs.slides[0]
+    # Find the title textbox (first one added, which is a textbox with text frame)
+    shape = next(s for s in slide.shapes if s.has_text_frame)
+    long_text = "This is a long text " * 20  # Repeating words to ensure word boundaries
+    warns = fill_shape(slide, shape, "text", long_text,
+                       Constraints(max_chars=40), slot_id="title")
+    assert any(w.code == "text_truncated" for w in warns)
+    assert shape.text_frame.text  # Text should not be empty
+    assert len(shape.text_frame.text) <= 40  # Should be constrained by max_chars
+
+
+def test_fill_shape_table_fills(sample_template_dir):
+    from pptx import Presentation
+    from pptx_mcp.filler import fill_shape
+    from pptx_mcp.models import Constraints
+    prs = Presentation(str(sample_template_dir / "base.pptx"))
+    slide = prs.slides[2]  # table slide
+    table_shape = next(s for s in slide.shapes if s.has_table)
+    fill_shape(slide, table_shape, "table", [["A", "B"], ["C", "D"]], Constraints())
+    assert table_shape.table.cell(0, 0).text == "A"
+
+
+def test_fill_shape_unknown_kind_is_noop(sample_template_dir):
+    from pptx import Presentation
+    from pptx_mcp.filler import fill_shape
+    from pptx_mcp.models import Constraints
+    prs = Presentation(str(sample_template_dir / "base.pptx"))
+    slide = prs.slides[0]
+    assert fill_shape(slide, slide.shapes[0], "other", "x", Constraints()) == []
