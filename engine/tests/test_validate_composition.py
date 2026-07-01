@@ -75,3 +75,28 @@ def test_bool_bbox_coord_rejected(sample_template_dir):
         {"component_id": cid, "bbox_pct": {"x": True, "y": 0, "w": 50, "h": 50}}]}]}
     errs = validate_composition(spec, tpl)
     assert any(e.code == "bad_bbox" for e in errs)
+
+
+def test_list_content_accepted_for_text(sample_template_dir):
+    from pptx_mcp.template import load_template
+    from pptx_mcp.catalog import get_catalog
+    from pptx_mcp.composer import validate_composition
+    tpl = load_template(sample_template_dir)
+    cid = next(c["component_id"] for c in get_catalog(tpl)["components"]
+               if c.get("slot_id") == "body")
+    spec = {"slides": [{"canvas": 1, "placements": [
+        {"component_id": cid, "content": ["a", "b", "c"]}]}]}
+    assert validate_composition(spec, tpl) == []
+
+
+def test_list_with_non_str_element_rejected(sample_template_dir):
+    from pptx_mcp.template import load_template
+    from pptx_mcp.catalog import get_catalog
+    from pptx_mcp.composer import validate_composition
+    tpl = load_template(sample_template_dir)
+    cid = next(c["component_id"] for c in get_catalog(tpl)["components"]
+               if c.get("slot_id") == "body")
+    spec = {"slides": [{"canvas": 1, "placements": [
+        {"component_id": cid, "content": ["ok", 5]}]}]}
+    errs = validate_composition(spec, tpl)
+    assert any(e.code == "wrong_type" for e in errs)

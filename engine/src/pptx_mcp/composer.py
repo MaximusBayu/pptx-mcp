@@ -13,7 +13,8 @@ from .models import Constraints, SlotError, Template
 _CID_RE = re.compile(r"^\d+:\d+$")
 # catalog type -> predicate the content value must satisfy
 _CONTENT_OK = {
-    "text": lambda v: isinstance(v, str),
+    "text": lambda v: isinstance(v, str)
+    or (isinstance(v, list) and all(isinstance(x, str) for x in v)),
     "table": lambda v: isinstance(v, list) and all(isinstance(r, list) for r in v),
     "image": lambda v: bool(v) and isinstance(v, (str, bytes)),
 }

@@ -7,6 +7,7 @@ import urllib.request
 
 from PIL import Image
 from pptx.util import Emu, Length, Pt
+from pptx.oxml.ns import qn
 
 from .assembler import find_shape
 from .autodetect import LINE_H, estimate_max_chars
@@ -103,6 +104,8 @@ def _resolve_spacing(p0, orig_pt) -> float:
 
 
 def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
+    if isinstance(value, list):
+        return _fill_text_list(shape, slot, value)
     warnings: list[SlotError] = []
     tf = shape.text_frame
     tf.word_wrap = True
@@ -147,6 +150,44 @@ def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
             for run in para.runs:
                 run.font.size = Pt(res.font_pt)
     return warnings
+
+
+def _set_para_text(p_elem, text: str) -> None:
+    """Set the text of a cloned <a:p>'s first run and drop any extra runs, so
+    the paragraph keeps its <a:pPr> (bullet/indent/alignment) but carries only
+    the supplied item text."""
+    runs = p_elem.findall(qn("a:r"))
+    if not runs:
+        return
+    first = runs[0]
+    t = first.find(qn("a:t"))
+    if t is not None:
+        t.text = text
+    for extra in runs[1:]:
+        p_elem.remove(extra)
+
+
+def _fill_text_list(shape, slot: Slot, items) -> list[SlotError]:
+    """Fill a text box with one bullet paragraph per item, cloning the
+    template's first paragraph (its <a:pPr>) so bullet glyph/indent survive.
+    Empty box (nothing to inherit) -> plain paragraphs, no bullet."""
+    tf = shape.text_frame
+    tf.word_wrap = True
+    items = [str(i) for i in items]
+    p0 = tf.paragraphs[0] if tf.paragraphs else None
+    r0 = p0.runs[0] if (p0 is not None and p0.runs) else None
+    if r0 is None:
+        tf.text = "\n".join(items)
+        return []
+    template_p = copy.deepcopy(p0._p)
+    txBody = tf._txBody
+    for p in list(tf.paragraphs):
+        p._p.getparent().remove(p._p)
+    for item in items:
+        new_p = copy.deepcopy(template_p)
+        _set_para_text(new_p, item)
+        txBody.append(new_p)
+    return []
 
 
 def _cell_font_pt(cell) -> float:

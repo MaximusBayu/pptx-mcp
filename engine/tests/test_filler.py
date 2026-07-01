@@ -1,7 +1,10 @@
-from pptx.util import Pt
+from pptx.util import Pt, Emu
+from pptx import Presentation
 from pptx_mcp.template import load_template
 from pptx_mcp.assembler import assemble, find_shape
-from pptx_mcp.filler import fill_slot
+from pptx_mcp.filler import fill_slot, fill_shape
+from pptx_mcp.models import Constraints
+from pptx.oxml.ns import qn
 
 
 def test_fill_text(sample_template_dir):
@@ -294,3 +297,45 @@ def test_fill_shape_unknown_kind_is_noop(sample_template_dir):
     prs = Presentation(str(sample_template_dir / "base.pptx"))
     slide = prs.slides[0]
     assert fill_shape(slide, slide.shapes[0], "other", "x", Constraints()) == []
+
+
+def _textbox_with_bullet():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Emu(914400), Emu(914400), Emu(4000000), Emu(3000000))
+    tb.text_frame.paragraphs[0].add_run().text = "SAMPLE"
+    pPr = tb.text_frame.paragraphs[0]._p.get_or_add_pPr()
+    pPr.append(pPr.makeelement(qn("a:buChar"), {"char": "•"}))
+    return prs, slide, tb
+
+
+def test_fill_list_creates_one_paragraph_per_item():
+    prs, slide, tb = _textbox_with_bullet()
+    warns = fill_shape(slide, tb, "text", ["First", "Second", "Third"], Constraints())
+    paras = tb.text_frame.paragraphs
+    assert len(paras) == 3
+    assert [p.text for p in paras] == ["First", "Second", "Third"]
+    assert warns == []
+
+
+def test_fill_list_preserves_bullet_formatting():
+    prs, slide, tb = _textbox_with_bullet()
+    fill_shape(slide, tb, "text", ["A", "B"], Constraints())
+    for p in tb.text_frame.paragraphs:
+        pPr = p._p.find(qn("a:pPr"))
+        assert pPr is not None and pPr.find(qn("a:buChar")) is not None
+
+
+def test_fill_list_empty_box_falls_back_to_plain_paragraphs():
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Emu(914400), Emu(914400), Emu(4000000), Emu(3000000))
+    fill_shape(slide, tb, "text", ["one", "two"], Constraints())
+    assert [p.text for p in tb.text_frame.paragraphs] == ["one", "two"]
+
+
+def test_fill_str_still_single_paragraph():
+    prs, slide, tb = _textbox_with_bullet()
+    fill_shape(slide, tb, "text", "Just one line", Constraints())
+    assert tb.text_frame.text == "Just one line"
+    assert len(tb.text_frame.paragraphs) == 1
