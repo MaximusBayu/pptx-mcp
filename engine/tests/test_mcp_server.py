@@ -100,3 +100,11 @@ def test_validate_composition_returns_errors(storage):
     out = tool_validate_composition(storage, "sample", spec)
     assert "errors" in out and "warnings" in out
     assert any(e["code"] == "unknown_canvas" for e in out["errors"])
+
+
+def test_composition_tool_docs_cover_bullets_and_codes():
+    import inspect
+    import pptx_mcp.mcp_server as m
+    src = inspect.getsource(m.build_server)
+    for token in ["array", "canvas", "overlap", "clamped", "low_contrast", "fill_failed"]:
+        assert token in src, f"missing guidance token: {token}"

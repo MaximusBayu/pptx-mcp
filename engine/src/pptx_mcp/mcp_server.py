@@ -115,14 +115,33 @@ def build_server(storage: Storage, base_url: str):
 
     @mcp.tool()
     def render_composition(template_id: str, composition_spec: dict) -> dict:
-        """Compose a slide from catalog components: pick a canvas base slide,
-        place components (from any slide) at target positions, fill content.
-        Returns validation + download_url + warnings."""
+        """Compose slides from catalog components and render a .pptx.
+
+        composition_spec = {"slides": [{"canvas": <int slide index>,
+          "placements": [{"component_id": "<slide>:<shape>",
+                          "bbox_pct": {"x","y","w","h"}?,   # optional; omit to keep source geometry
+                          "content": <str | [str,...] | [[cell,...],...] | url>?}]}]}
+
+        Pick a canvas base slide (its background/theme is inherited); place any
+        component from any slide onto it; fill content. For a bullet/pointer
+        list component (catalog `multiline: true`), pass content as an ARRAY of
+        strings — one bullet per item, template bullet style preserved.
+
+        Returns {validation, download_url, warnings}. Warning codes:
+        text_truncated (text/items dropped to fit), table_autogrew (rows added),
+        overlap (two placed shapes overlap), clamped (a placement was pulled
+        back inside the slide), low_contrast (text vs background too close to
+        read), fill_failed (one placement's fill errored and was skipped)."""
         return tool_render_composition(storage, base_url, template_id, composition_spec)
 
     @mcp.tool()
     def validate_composition(template_id: str, composition_spec: dict) -> dict:
-        """Dry-run a composition spec: returns {errors, warnings} without output."""
+        """Dry-run a composition_spec (same shape as render_composition): returns
+        {errors, warnings} without producing a file. Errors block rendering
+        (unknown_canvas, unknown_component, wrong_type, bad_bbox); warnings
+        (overlap, clamped, low_contrast, fill_failed, text_truncated,
+        table_autogrew) do not. Bullet-list components take an array of
+        strings as content."""
         return tool_validate_composition(storage, template_id, composition_spec)
 
     return mcp
