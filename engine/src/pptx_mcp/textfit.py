@@ -97,3 +97,13 @@ def truncate_to_sentence(text: str, max_chars: int) -> tuple[str, str]:
             break
     kept = kept.rstrip()
     return kept, text[len(kept):].lstrip()
+
+
+def height_for(value: str, width_emu: int, font_pt: float, spacing: float) -> int:
+    """EMU height needed to render `value` at font_pt/spacing in a box of the
+    given width. Newlines start new lines. 0 when width is unknown."""
+    if width_emu <= 0:
+        return 0
+    cpl = _chars_per_line(width_emu, font_pt)
+    lines = _lines_needed(value, cpl)
+    return int(math.ceil(lines * font_pt * EMU_PER_PT * spacing))

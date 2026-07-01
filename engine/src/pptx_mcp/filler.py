@@ -13,12 +13,13 @@ from .assembler import find_shape
 from .autodetect import LINE_H, estimate_max_chars
 from .models import Constraints, Slot, SlotError
 from .tablefit import MIN_COL_FRAC, MIN_ROW_FRAC, redistribute
-from .textfit import fit_text, truncate_to_sentence
+from .textfit import FONT_STEP, fit_text, height_for, truncate_to_sentence
 
 _BASE_PT = 24.0
 _MIN_PT = 12.0
 _CELL_SHRINK_PT = 4.0
 _IMG_MAX_BYTES = 20 * 1024 * 1024
+_GROW_MARGIN_EMU = 45720  # ~0.05 in breathing room below a grown box
 
 
 def load_image_bytes(value) -> bytes:
@@ -48,7 +49,7 @@ def load_image_bytes(value) -> bytes:
 
 
 def fill_shape(slide, shape, kind: str, value, constraints: Constraints,
-               slot_id: str | None = None) -> list[SlotError]:
+               slot_id: str | None = None, max_bottom_emu: int | None = None) -> list[SlotError]:
     """Fill an arbitrary shape by content kind, using `constraints` directly.
 
     No dependency on a deck Slot — `composer` calls this for placement content.
@@ -58,7 +59,7 @@ def fill_shape(slide, shape, kind: str, value, constraints: Constraints,
     if kind == "text":
         synthetic = Slot(id=slot_id or "", name="", type="text",
                          shape_id=shape.shape_id, constraints=constraints)
-        return _fill_text(shape, synthetic, value)
+        return _fill_text(shape, synthetic, value, max_bottom_emu)
     if kind == "table":
         return _fill_table(shape, value)
     if kind == "image":
@@ -103,9 +104,46 @@ def _resolve_spacing(p0, orig_pt) -> float:
     return LINE_H
 
 
-def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
+def _grow_box(shape, value, font_pt: float, spacing: float,
+              max_bottom_emu: int | None) -> None:
+    """Grow the shape's height downward (top fixed) to hold `value` at
+    font_pt/spacing, capped at max_bottom_emu minus a margin. No-op on the deck
+    path (max_bottom_emu is None) so deck geometry is never touched."""
+    if max_bottom_emu is None:
+        return
+    w = shape.width or 0
+    if w <= 0 or shape.height is None or shape.top is None:
+        return
+    joined = value if isinstance(value, str) else "\n".join(str(i) for i in value)
+    needed = height_for(joined, w, font_pt, spacing)
+    cap = max_bottom_emu - shape.top - _GROW_MARGIN_EMU
+    target = min(needed, cap)
+    if target > shape.height:
+        shape.height = int(target)
+
+
+def _fit_list(items, width, height, orig_pt, floor_pt, spacing):
+    """Shrink font (in FONT_STEP steps) until every item fits the box height;
+    if the floor still overflows, drop trailing whole items. Returns
+    (kept_items, font_pt, dropped_count)."""
+    if width <= 0 or height <= 0:
+        return items, orig_pt, 0
+    joined = "\n".join(items)
+    pt = orig_pt
+    while pt >= floor_pt:
+        if height_for(joined, width, pt, spacing) <= height:
+            return items, pt, 0
+        pt = round(pt - FONT_STEP, 4)
+    pt = floor_pt
+    kept = list(items)
+    while len(kept) > 1 and height_for("\n".join(kept), width, pt, spacing) > height:
+        kept.pop()
+    return kept, pt, len(items) - len(kept)
+
+
+def _fill_text(shape, slot: Slot, value, max_bottom_emu: int | None = None) -> list[SlotError]:
     if isinstance(value, list):
-        return _fill_text_list(shape, slot, value)
+        return _fill_text_list(shape, slot, value, max_bottom_emu)
     warnings: list[SlotError] = []
     tf = shape.text_frame
     tf.word_wrap = True
@@ -118,6 +156,7 @@ def _fill_text(shape, slot: Slot, value: str) -> list[SlotError]:
 
     base_spacing = _resolve_spacing(p0, orig_pt)
     floor_pt = slot.constraints.shrink_floor_pt or _MIN_PT
+    _grow_box(shape, value, orig_pt, base_spacing, max_bottom_emu)
     res = fit_text(value, shape.width or 0, shape.height or 0, orig_pt, floor_pt, base_spacing)
     value = res.value
     dropped = res.dropped
@@ -167,10 +206,7 @@ def _set_para_text(p_elem, text: str) -> None:
         p_elem.remove(extra)
 
 
-def _fill_text_list(shape, slot: Slot, items) -> list[SlotError]:
-    """Fill a text box with one bullet paragraph per item, cloning the
-    template's first paragraph (its <a:pPr>) so bullet glyph/indent survive.
-    Empty box (nothing to inherit) -> plain paragraphs, no bullet."""
+def _fill_text_list(shape, slot: Slot, items, max_bottom_emu: int | None = None) -> list[SlotError]:
     tf = shape.text_frame
     tf.word_wrap = True
     items = [str(i) for i in items]
@@ -179,15 +215,29 @@ def _fill_text_list(shape, slot: Slot, items) -> list[SlotError]:
     if r0 is None:
         tf.text = "\n".join(items)
         return []
+    orig_pt = r0.font.size.pt if r0.font.size is not None else _BASE_PT
+    base_spacing = _resolve_spacing(p0, orig_pt)
+    floor_pt = slot.constraints.shrink_floor_pt or _MIN_PT
+    _grow_box(shape, items, orig_pt, base_spacing, max_bottom_emu)
+    kept, font_pt, dropped = _fit_list(items, shape.width or 0, shape.height or 0,
+                                       orig_pt, floor_pt, base_spacing)
     template_p = copy.deepcopy(p0._p)
     txBody = tf._txBody
     for p in list(tf.paragraphs):
         p._p.getparent().remove(p._p)
-    for item in items:
+    for item in kept:
         new_p = copy.deepcopy(template_p)
         _set_para_text(new_p, item)
         txBody.append(new_p)
-    return []
+    if font_pt < orig_pt:
+        for para in tf.paragraphs:
+            for run in para.runs:
+                run.font.size = Pt(font_pt)
+    warnings: list[SlotError] = []
+    if dropped:
+        warnings.append(SlotError(0, slot.id, "text_truncated",
+                                  f"dropped {dropped} list item(s) to fit"))
+    return warnings
 
 
 def _cell_font_pt(cell) -> float:

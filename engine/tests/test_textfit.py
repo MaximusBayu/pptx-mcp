@@ -73,3 +73,16 @@ def test_falls_back_to_word_when_no_sentence_fits():
     assert len(kept) <= 20
     assert dropped
     assert not kept.endswith(" ")
+
+
+def test_height_for_grows_with_more_text():
+    from pptx_mcp.textfit import height_for
+    w = 3_000_000
+    short = height_for("one line", w, 18.0, 1.0)
+    long = height_for("x" * 4000, w, 18.0, 1.0)
+    assert long > short > 0
+
+
+def test_height_for_zero_width_is_zero():
+    from pptx_mcp.textfit import height_for
+    assert height_for("anything", 0, 18.0, 1.0) == 0

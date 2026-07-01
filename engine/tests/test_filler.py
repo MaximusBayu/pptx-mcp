@@ -339,3 +339,52 @@ def test_fill_str_still_single_paragraph():
     fill_shape(slide, tb, "text", "Just one line", Constraints())
     assert tb.text_frame.text == "Just one line"
     assert len(tb.text_frame.paragraphs) == 1
+
+
+from pptx.util import Inches
+from pptx_mcp.filler import fill_slot, _fill_text  # noqa: F811
+
+
+def _small_box(width_in=4.0, height_in=0.4):
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(width_in), Inches(height_in))
+    r = tb.text_frame.paragraphs[0].add_run()
+    r.text = "x"
+    r.font.size = Pt(24)
+    return prs, slide, tb
+
+
+def test_box_grows_when_bottom_bound_given():
+    prs, slide, tb = _small_box()
+    h_before = tb.height
+    slot = Slot(id="", name="", type="text", shape_id=tb.shape_id, constraints=Constraints())
+    _fill_text(tb, slot, "This is a long line of text " * 20, max_bottom_emu=6858000)
+    assert tb.height > h_before
+
+
+def test_deck_path_leaves_height_unchanged():
+    prs, slide, tb = _small_box()
+    h_before = tb.height
+    slot = Slot(id="", name="", type="text", shape_id=tb.shape_id, constraints=Constraints())
+    fill_slot(slide, slot, "This is a long line of text " * 20)  # no max_bottom_emu -> None
+    assert tb.height == h_before
+
+
+def test_list_drops_trailing_items_when_capped():
+    prs, slide, tb = _small_box(width_in=4.0, height_in=0.5)
+    slot = Slot(id="body", name="", type="text", shape_id=tb.shape_id, constraints=Constraints())
+    items = [f"Item number {i} with a fair amount of text" for i in range(20)]
+    # cap the bottom just below the box so growth cannot fit all items
+    warns = _fill_text(tb, slot, items, max_bottom_emu=tb.top + tb.height + 200000)
+    assert len(tb.text_frame.paragraphs) < 20
+    assert any(w.code == "text_truncated" for w in warns)
+
+
+def test_list_grows_to_keep_all_items():
+    prs, slide, tb = _small_box(width_in=6.0, height_in=0.4)
+    slot = Slot(id="body", name="", type="text", shape_id=tb.shape_id, constraints=Constraints())
+    items = [f"Point {i}" for i in range(6)]
+    warns = _fill_text(tb, slot, items, max_bottom_emu=6858000)
+    assert len(tb.text_frame.paragraphs) == 6
+    assert not any(w.code == "text_truncated" for w in warns)
