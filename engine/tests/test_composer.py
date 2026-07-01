@@ -99,3 +99,58 @@ def test_bbox_repositions(sample_template_dir):
     prs = _reopen(data)
     shp = next(s for s in prs.slides[0].shapes if s.has_text_frame)
     assert abs(shp.left - int(sw * 0.5)) < int(sw * 0.01)
+
+
+def test_list_content_renders_bullets_end_to_end(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    comps = get_catalog(tpl)["components"]
+    body = next(c for c in comps if c.get("slot_id") == "body")
+    spec = {"slides": [{"canvas": 1, "placements": [
+        {"component_id": body["component_id"], "content": ["First", "Second", "Third"]}]}]}
+    data, _ = compose(spec, tpl)
+    prs = _reopen(data)
+    body_shapes = [s for s in prs.slides[0].shapes
+                   if s.has_text_frame and len(s.text_frame.paragraphs) == 3]
+    assert body_shapes, "expected a 3-paragraph bullet box"
+
+
+def test_fill_failure_becomes_warning_not_crash(sample_template_dir, monkeypatch):
+    import pptx_mcp.composer as comp
+    tpl = load_template(sample_template_dir)
+    c = _components(tpl)
+
+    def boom(*a, **k):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(comp, "fill_shape", boom)
+    spec = {"slides": [{"canvas": 0, "placements": [
+        {"component_id": c["title"]["component_id"], "content": "X"}]}]}
+    data, warnings = compose(spec, tpl)
+    assert data[:2] == b"PK"
+    assert any(w["code"] == "fill_failed" for w in warnings)
+
+
+def test_off_slide_placement_clamped(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    c = _components(tpl)
+    src = Presentation(str(sample_template_dir / "base.pptx"))
+    sw = src.slide_width
+    spec = {"slides": [{"canvas": 0, "placements": [
+        {"component_id": c["title"]["component_id"], "content": "X",
+         "bbox_pct": {"x": 90, "y": 10, "w": 30, "h": 10}}]}]}
+    data, warnings = compose(spec, tpl)
+    prs = _reopen(data)
+    shp = next(s for s in prs.slides[0].shapes if s.has_text_frame)
+    assert shp.left + shp.width <= sw + 1  # clamped inside slide
+    assert any(w["code"] == "clamped" for w in warnings)
+
+
+def test_overlapping_placements_warn(sample_template_dir):
+    tpl = load_template(sample_template_dir)
+    c = _components(tpl)
+    box = {"x": 10, "y": 10, "w": 50, "h": 50}
+    spec = {"slides": [{"canvas": 0, "placements": [
+        {"component_id": c["title"]["component_id"], "content": "A", "bbox_pct": box},
+        {"component_id": c["subtitle"]["component_id"], "content": "B", "bbox_pct": box}]}]}
+    _data, warnings = compose(spec, tpl)
+    assert any(w["code"] == "overlap" for w in warnings)

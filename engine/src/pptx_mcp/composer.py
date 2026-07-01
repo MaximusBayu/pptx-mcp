@@ -6,8 +6,9 @@ from pptx import Presentation
 from pptx.oxml.ns import qn
 
 from .assembler import drop_base_slides, find_shape, _remap_rels
-from .catalog import component_type, get_catalog
+from .catalog import component_type, get_catalog, _hex_or_none
 from .filler import fill_shape
+from .guardrails import check_layout
 from .models import Constraints, SlotError, Template
 
 _CID_RE = re.compile(r"^\d+:\d+$")
@@ -90,6 +91,42 @@ def _set_geometry(shape, bbox, sw, sh) -> None:
     shape.height = int(sh * bbox["h"] / 100.0)
 
 
+def _rect_pct(shape, sw, sh) -> dict:
+    return {"x": 100.0 * (shape.left or 0) / sw, "y": 100.0 * (shape.top or 0) / sh,
+            "w": 100.0 * (shape.width or 0) / sw, "h": 100.0 * (shape.height or 0) / sh}
+
+
+def _text_color(shape):
+    if not getattr(shape, "has_text_frame", False):
+        return None
+    paras = shape.text_frame.paragraphs
+    runs = paras[0].runs if paras else []
+    return _hex_or_none(runs[0].font.color) if runs else None
+
+
+def _eff_bg(shape, canvas_bg):
+    try:
+        fill = shape.fill
+        if fill.type is not None:
+            c = _hex_or_none(fill.fore_color)
+            if c:
+                return c
+    except (TypeError, AttributeError, ValueError):
+        pass
+    return canvas_bg
+
+
+def _canvas_bg_hex(slide):
+    csld = slide._element.find(qn("p:cSld"))
+    if csld is None:
+        return None
+    bg = csld.find(qn("p:bg"))
+    if bg is None:
+        return None
+    clr = bg.find(".//" + qn("a:srgbClr"))
+    return clr.get("val") if clr is not None else None
+
+
 def compose(composition_spec: dict, template: Template) -> tuple[bytes, list[dict]]:
     errors = validate_composition(composition_spec, template)
     if errors:
@@ -109,10 +146,11 @@ def compose(composition_spec: dict, template: Template) -> tuple[bytes, list[dic
         canvas = base_slides[slide_spec["canvas"]]
         dest = prs.slides.add_slide(canvas.slide_layout)
         _copy_background(canvas, dest)
-        # strip placeholder shapes add_slide injected from the layout
+        canvas_bg = _canvas_bg_hex(canvas)
         for shp in list(dest.shapes):
             shp._element.getparent().remove(shp._element)
 
+        placed_shapes = []  # (component_id, shape)
         for placement in slide_spec.get("placements", []):
             src_idx, shape_id = (int(x) for x in placement["component_id"].split(":"))
             src_shape = find_shape(base_slides[src_idx], shape_id)
@@ -128,10 +166,28 @@ def compose(composition_spec: dict, template: Template) -> tuple[bytes, list[dic
                 kind = component_type(placed)
                 slot = slot_map.get((src_idx, shape_id))
                 constraints = slot.constraints if slot is not None else Constraints()
-                for w in fill_shape(dest, placed, kind, content, constraints,
-                                    slot_id=placement["component_id"]):
-                    w.slide_index = out_index
-                    warnings.append(w.to_dict())
+                try:
+                    for w in fill_shape(dest, placed, kind, content, constraints,
+                                        slot_id=placement["component_id"],
+                                        max_bottom_emu=sh):
+                        w.slide_index = out_index
+                        warnings.append(w.to_dict())
+                except Exception as exc:
+                    warnings.append(SlotError(out_index, placement["component_id"],
+                                              "fill_failed", str(exc)).to_dict())
+                    continue
+            placed_shapes.append((placement["component_id"], placed))
+
+        gl = [{"component_id": cid, "rect": _rect_pct(shp, sw, sh),
+               "text_color": _text_color(shp), "eff_bg": _eff_bg(shp, canvas_bg)}
+              for cid, shp in placed_shapes]
+        gwarnings, clamps = check_layout(gl)
+        for w in gwarnings:
+            w["slide_index"] = out_index
+            warnings.append(w)
+        for cid, shp in placed_shapes:
+            if cid in clamps:
+                _set_geometry(shp, clamps[cid], sw, sh)
 
     drop_base_slides(prs, original_count)
 
