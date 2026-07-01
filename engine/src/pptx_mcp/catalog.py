@@ -1,5 +1,6 @@
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.oxml.ns import qn
 
 _TEXT_SAMPLE_MAX = 200
 
@@ -12,6 +13,32 @@ def component_type(shp) -> str:
     if getattr(shp, "has_text_frame", False):
         return "text"
     return "other"
+
+
+def _is_multiline(shp) -> bool:
+    if not getattr(shp, "has_text_frame", False):
+        return False
+    paras = shp.text_frame.paragraphs
+    if sum(1 for p in paras if (p.text or "").strip()) > 1:
+        return True
+    p0 = paras[0] if paras else None
+    if p0 is not None:
+        pPr = p0._p.find(qn("a:pPr"))
+        if pPr is not None and (pPr.find(qn("a:buChar")) is not None
+                                or pPr.find(qn("a:buAutoNum")) is not None):
+            return True
+    return False
+
+
+def _hint(ctype: str, multiline: bool) -> str:
+    if ctype == "text":
+        return ("bullet list — pass content as an array of strings, one per bullet"
+                if multiline else "single text — pass a string")
+    if ctype == "table":
+        return "pass rows as list[list]"
+    if ctype == "image":
+        return "pass a URL or base64 string"
+    return "decorative — placed verbatim, no content"
 
 
 def _pct(value, total) -> float:
@@ -59,10 +86,14 @@ def _component_dict(shp, slide_index, sw, sh, slot_id) -> dict:
     y = shp.top or 0
     w = shp.width or 0
     h = shp.height or 0
+    ctype = component_type(shp)
+    multiline = _is_multiline(shp)
     return {
         "component_id": f"{slide_index}:{shp.shape_id}",
         "source_slide": slide_index,
-        "type": component_type(shp),
+        "type": ctype,
+        "multiline": multiline,
+        "hint": _hint(ctype, multiline),
         "fillable": slot_id is not None,
         "slot_id": slot_id,
         "name": shp.name or "",

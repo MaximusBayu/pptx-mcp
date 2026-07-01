@@ -44,3 +44,44 @@ def test_shape_style_best_effort_no_crash():
     style = _shape_style(_NoText())
     assert style == {"font_name": None, "font_pt": None,
                      "font_color": None, "fill_color": None}
+
+
+def test_multiline_flag_and_hint(sample_template_dir):
+    from pptx_mcp.template import load_template
+    from pptx_mcp.catalog import get_catalog
+    tpl = load_template(sample_template_dir)
+    comps = get_catalog(tpl)["components"]
+    for c in comps:
+        assert "multiline" in c and isinstance(c["multiline"], bool)
+        assert "hint" in c and isinstance(c["hint"], str) and c["hint"]
+    img = next(c for c in comps if c["type"] == "image")
+    assert "URL" in img["hint"] or "base64" in img["hint"]
+    table = next(c for c in comps if c["type"] == "table")
+    assert "list[list]" in table["hint"]
+
+
+def test_multiline_true_for_bulleted_text():
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.oxml.ns import qn
+    from pptx_mcp.catalog import _is_multiline
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(3))
+    r = tb.text_frame.paragraphs[0].add_run()
+    r.text = "one"
+    r.font.size = Pt(18)
+    pPr = tb.text_frame.paragraphs[0]._p.get_or_add_pPr()
+    pPr.append(pPr.makeelement(qn("a:buChar"), {"char": "•"}))
+    assert _is_multiline(tb) is True
+
+
+def test_multiline_false_for_single_line():
+    from pptx import Presentation
+    from pptx.util import Inches
+    from pptx_mcp.catalog import _is_multiline
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    tb.text_frame.paragraphs[0].add_run().text = "just one line"
+    assert _is_multiline(tb) is False
