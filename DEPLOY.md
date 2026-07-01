@@ -442,6 +442,42 @@ rolling the code back, then redeploy the older code.
 
 ---
 
+## 15. Continuous Deployment (GitHub Actions → this VPS)
+
+`.github/workflows/deploy.yml` auto-deploys on every push to **Max-dev**: it
+runs the CI test suite (reusable `ci.yml`), and only if that passes, SSHes into
+this box and runs the §11 update flow (`ops-backup.sh` → `git reset --hard
+origin/Max-dev` → `dc build` → `dc up -d` → prune → health check).
+
+### One-time server prep
+- The repo at `${DEPLOY_PATH}` (default `/opt/pptx-mcp`) must be a git clone
+  with an `origin` remote the deploy user can `git fetch`.
+- `compose.prod.yml`, `Caddyfile`, and `.env` must already exist on the box
+  (steps 4–5). CD never creates secrets; it only rebuilds/restarts.
+- Create a deploy SSH keypair; put the **public** key in the deploy user's
+  `~/.ssh/authorized_keys`. The **private** key goes in the `SSH_KEY` secret.
+- The deploy user must be able to run `docker compose` (in the `docker` group).
+
+### GitHub repo secrets (Settings → Secrets and variables → Actions)
+| Secret | Required | Example | Purpose |
+|--------|----------|---------|---------|
+| `SSH_HOST` | yes | `203.0.113.10` or `app.example.com` | VPS host |
+| `SSH_USER` | yes | `deploy` | SSH login user (in `docker` group) |
+| `SSH_KEY` | yes | *private key PEM* | Deploy private key |
+| `SSH_PORT` | no (def 22) | `22` | SSH port |
+| `DEPLOY_PATH` | no (def `/opt/pptx-mcp`) | `/opt/pptx-mcp` | Repo path on the box |
+| `SSH_KNOWN_HOSTS` | no | *`ssh-keyscan` output* | Pin host key; else auto-scanned |
+| `DEPLOY_HEALTHCHECK_URL` | no | `https://app.example.com/login` | Post-deploy gate; job fails if unreachable |
+
+Also create a GitHub **Environment** named `production` (Settings →
+Environments) — the deploy job is bound to it, so you can add required
+reviewers/approvals there if you want a manual gate before deploy.
+
+### Manual deploy
+Actions → **CD** → *Run workflow* (uses `workflow_dispatch`).
+
+---
+
 ## Common failures
 
 | Symptom | Likely cause | Fix |
