@@ -22,7 +22,8 @@ jobs:
     name: deploy to VPS
     needs: ci
     runs-on: ubuntu-latest
-    environment: production
+    # Secrets are scoped to a GitHub Environment named "SSH_HOST".
+    environment: SSH_HOST
     steps:
       - name: Write SSH key
         env:
@@ -35,9 +36,9 @@ jobs:
           # Fail early with a clear message if a required secret is missing.
           # (GitHub masks values in logs, so an empty echo != empty secret;
           # these checks distinguish "not set" from other failures.)
-          : "${SSH_HOST:?is empty/unset - add repo secret SSH_HOST}"
-          : "${SSH_USER:?is empty/unset - add repo secret SSH_USER}"
-          : "${SSH_KEY:?is empty/unset - add repo secret SSH_KEY}"
+          : "${SSH_HOST:?is empty/unset - set secret SSH_HOST}"
+          : "${SSH_USER:?is empty/unset - set secret SSH_USER}"
+          : "${SSH_KEY:?is empty/unset - set secret SSH_KEY}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
