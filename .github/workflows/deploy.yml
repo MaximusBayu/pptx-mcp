@@ -29,15 +29,24 @@ jobs:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
+          # Fail early with a clear message if a required secret is missing.
+          # (GitHub masks values in logs, so an empty echo != empty secret;
+          # these checks distinguish "not set" from other failures.)
+          : "${SSH_HOST:?is empty/unset - add repo secret SSH_HOST}"
+          : "${SSH_USER:?is empty/unset - add repo secret SSH_USER}"
+          : "${SSH_KEY:?is empty/unset - add repo secret SSH_KEY}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           if [ -n "$SSH_KNOWN_HOSTS" ]; then
             printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
-            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            # Best-effort; ssh below falls back to accept-new if this is empty.
+            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null \
+              || echo "ssh-keyscan failed; ssh will use StrictHostKeyChecking=accept-new"
           fi
 
       - name: Deploy (git sync + compose build/up on the box)
@@ -50,6 +59,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" \
             -o BatchMode=yes \
+            -o StrictHostKeyChecking=accept-new \
             "${SSH_USER}@${SSH_HOST}" \
             "DEPLOY_PATH='${DEPLOY_PATH:-/opt/pptx-mcp}' BRANCH='Max-dev' HEALTHCHECK_URL='${HEALTHCHECK_URL}' bash -s" <<'REMOTE'
           set -euo pipefail
