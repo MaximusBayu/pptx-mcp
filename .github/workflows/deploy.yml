@@ -97,13 +97,29 @@ jobs:
           echo "==> status"
           $DC ps
 
+          # Primary gate: wait for web + engine-service to report healthy via
+          # their container healthchecks. Works even when ports are unpublished
+          # (compose.prod.yml uses !reset [], so no host curl is possible).
+          echo "==> waiting for containers to become healthy"
+          gate_ok=0
+          for i in $(seq 1 30); do
+            unhealthy=$($DC ps --format '{{.Service}} {{.Health}} {{.State}}' \
+              | awk '$1=="web" || $1=="engine-service" {print}' \
+              | awk '$2!="healthy" {print $1}')
+            if [ -z "$unhealthy" ]; then echo "containers healthy"; gate_ok=1; break; fi
+            sleep 6
+          done
+          if [ "$gate_ok" != "1" ]; then
+            echo "containers did not become healthy"; $DC ps; $DC logs --tail=80 web engine-service; exit 1
+          fi
+
+          # Optional external check (only meaningful once TLS/ingress exists).
+          # Non-fatal: a failure here does not fail the deploy.
           if [ -n "${HEALTHCHECK_URL}" ]; then
-            echo "==> health check ${HEALTHCHECK_URL}"
-            for i in $(seq 1 20); do
-              if curl -fsS --max-time 10 "${HEALTHCHECK_URL}" >/dev/null; then echo "healthy"; exit 0; fi
-              sleep 6
-            done
-            echo "health check did not pass"; $DC logs --tail=80 web; exit 1
+            echo "==> external health check ${HEALTHCHECK_URL} (non-fatal)"
+            curl -fsS --max-time 10 "${HEALTHCHECK_URL}" >/dev/null \
+              && echo "external check OK" \
+              || echo "external check failed (expected if no ingress/TLS yet); ignoring"
           fi
           echo "deploy done"
           REMOTE
