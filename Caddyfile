@@ -1,0 +1,13 @@
+# Domains come from .env (APP_DOMAIN / FILES_DOMAIN), injected into Caddy's
+# environment via the caddy service's env_file. Caddy issues TLS automatically.
+
+{$APP_DOMAIN} {
+    reverse_proxy web:3000
+}
+
+{$FILES_DOMAIN} {
+    # Preserve the Host header so MinIO presigned-URL signatures validate.
+    reverse_proxy minio:9000 {
+        header_up Host {host}
+    }
+}
