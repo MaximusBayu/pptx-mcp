@@ -49,25 +49,11 @@ services:
     deploy:
       replicas: 0
 
-  # Reverse proxy: terminates TLS (auto Let's Encrypt) and routes
-  #   {$APP_DOMAIN}   -> web:3000
-  #   {$FILES_DOMAIN} -> minio:9000  (Host preserved so presigned URLs validate)
-  # APP_DOMAIN / FILES_DOMAIN come from .env (env_file below).
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on: [web, minio]
-    env_file: .env
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+# TLS + ingress are handled by an external nginx (rise-gateway) that
+# proxies to web:3000 and minio:9000 over the shared docker network, so
+# no reverse proxy is defined here and no host ports are published
+# (!reset [] above).
 
 volumes:
   pgdata:
   miniodata:
-  caddy_data:
-  caddy_config:
