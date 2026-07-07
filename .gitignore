@@ -53,4 +53,3 @@ Thumbs.db
 *.db
 .playwright*
 template example/
-.github/workflows/deploy.yml

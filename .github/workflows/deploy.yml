@@ -1,0 +1,89 @@
+name: CD
+
+# Continuous Deployment for the Max-dev branch.
+# On every push to Max-dev: run the full CI suite, then (only if it
+# passes) SSH into the VPS and run the DEPLOY.md §11 update flow.
+on:
+  push:
+    branches: [Max-dev]
+  workflow_dispatch: {}
+
+# Never run two deploys at once.
+concurrency:
+  group: deploy-max-dev
+  cancel-in-progress: false
+
+jobs:
+  # Gate: reuse CI (web unit + engine tests). Deploy only if this passes.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: deploy to VPS
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Write SSH key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      - name: Deploy (git sync + compose build/up on the box)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          HEALTHCHECK_URL: ${{ secrets.DEPLOY_HEALTHCHECK_URL }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" \
+            -o BatchMode=yes \
+            "${SSH_USER}@${SSH_HOST}" \
+            "DEPLOY_PATH='${DEPLOY_PATH:-/opt/pptx-mcp}' BRANCH='Max-dev' HEALTHCHECK_URL='${HEALTHCHECK_URL}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "${DEPLOY_PATH}"
+
+          DC="docker compose -f docker-compose.yml -f compose.prod.yml"
+
+          echo "==> backup (if configured)"
+          if [ -x ./ops-backup.sh ]; then ./ops-backup.sh || echo "backup failed, continuing"; else echo "no ops-backup.sh, skipping"; fi
+
+          echo "==> sync code to origin/${BRANCH}"
+          git fetch --all --prune
+          git checkout -f "${BRANCH}"
+          git reset --hard "origin/${BRANCH}"
+
+          echo "==> build"
+          $DC build
+
+          echo "==> up (web auto-runs prisma migrate deploy on start)"
+          $DC up -d
+
+          echo "==> prune old images"
+          docker image prune -f
+
+          echo "==> status"
+          $DC ps
+
+          if [ -n "${HEALTHCHECK_URL}" ]; then
+            echo "==> health check ${HEALTHCHECK_URL}"
+            for i in $(seq 1 20); do
+              if curl -fsS --max-time 10 "${HEALTHCHECK_URL}" >/dev/null; then echo "healthy"; exit 0; fi
+              sleep 6
+            done
+            echo "health check did not pass"; $DC logs --tail=80 web; exit 1
+          fi
+          echo "deploy done"
+          REMOTE
