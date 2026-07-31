@@ -115,7 +115,7 @@ chmod 600 .env
 
 ---
 
-## 5. Production compose override + Caddy
+## 5. Production compose override
 
 Create `compose.prod.yml` (adds restart policies, **named volumes for
 persistence**, stops publishing internal ports, health checks, and a Caddy
@@ -223,6 +223,42 @@ source ~/.bashrc
 
 **Verify:** `dc config >/dev/null && echo OK` prints `OK` (compose files parse;
 confirms `!reset` is supported).
+
+---
+
+## 5b. Expose the MCP server through nginx
+
+The MCP server listens on `mcp-server:8765` inside the compose network and is
+not published to the host. The VPS nginx (`rise-gateway`) already terminates
+TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add a `location`
+block to that existing server block so the `/mcp/` path reaches the MCP server
+instead. nginx prefers the longest matching prefix, so every other path keeps
+going to the web app — including `/api/mcp/...`, which the MCP server itself
+calls.
+
+```nginx
+location /mcp/ {
+    proxy_pass http://mcp-server:8765/mcp/;
+    proxy_http_version 1.1;      # the 1.0 default breaks chunked streaming
+    proxy_buffering off;         # else streamed events sit in nginx's buffer
+    proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
+    proxy_set_header Host $host;
+    proxy_set_header X-API-Key $http_x_api_key;
+}
+```
+
+No DNS record and no certificate change are needed: this is a path on a host
+that already resolves and already has a certificate.
+
+**Verify:**
+```bash
+nginx -t && systemctl reload nginx
+curl -fsS https://mcp.maxflow.space/mcp/health   # -> ok
+```
+
+If `curl` returns the web app's HTML instead of `ok`, the `location` block is
+not being matched — confirm it sits inside the `mcp.maxflow.space` server
+block and not a different one.
 
 ---
 

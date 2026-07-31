@@ -15,16 +15,17 @@ database or storage of its own.
 
 ## Configuration
 
-The server reads two environment variables:
+| Var | Default | Meaning |
+|---|---|---|
+| `WEB_URL` | `http://web:3000` | Base URL of the web app |
+| `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
+| `MCP_HOST` | `0.0.0.0` | HTTP bind address |
+| `MCP_PORT` | `8765` | HTTP bind port |
+| `PPTX_API_KEY` | — | Your `pk_...` key. **stdio mode only** |
 
-| Var            | Meaning                                   | Example                     |
-|----------------|-------------------------------------------|-----------------------------|
-| `WEB_URL`      | Base URL of the web app                   | `http://localhost:3000`     |
-| `PPTX_API_KEY` | Your API key (`pk_...`)                   | `pk_ab12...`                |
-
-> Inside Docker Compose the default `WEB_URL` is `http://web:3000`. From an
-> agent running on your host, point it at `http://localhost:3000` (or your
-> deployed URL).
+In `http` mode `PPTX_API_KEY` is ignored: the key belongs to the caller and is
+read from the `x-api-key` header of each request. A request without that header
+is rejected, so the deployed server holds no credential of its own.
 
 ## Tools exposed
 
@@ -34,6 +35,7 @@ The server reads two environment variables:
 | `get_template_schema_tool`| `template_id`                 | slot schema (slide_types[].slots[])  |
 | `render_deck_tool`        | `template_id`, `deck_spec`    | `{ validation, download_url }`        |
 | `render_preview_tool`     | `template_id`, `deck_spec`    | `{ validation, previews[] }` (PNG)    |
+| `suggest_layout_tool`     | `file_path`, `spec`           | suggested layout for a .pptx file    |
 
 `deck_spec` shape:
 
@@ -48,21 +50,36 @@ The server reads two environment variables:
 Get the exact `slide_type` ids and slot ids from `get_template_schema_tool`,
 or from the template's **Use** page in the web UI.
 
-## Run it from an MCP client
+## Run it over HTTP (Langflow, n8n, any remote MCP client)
 
-The server speaks MCP over stdio. Run it directly with Python or via the
-Docker image.
+The deployed server is at `https://mcp.maxflow.space/mcp/`.
 
-### Option A — local Python
+In Langflow, add an **MCP Tools** component, choose **Streamable HTTP/SSE**, and fill in:
+
+| Field | Value |
+|---|---|
+| Name | `pptx` |
+| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp/` |
+| Headers | key `x-api-key`, value your `pk_...` key |
+| Environment Variables | leave empty |
+
+Locally instead, `docker compose up mcp-server` serves the same thing at
+`http://localhost:8765/mcp/`.
+
+Check it is alive with `curl -fsS https://mcp.maxflow.space/mcp/health`, which
+prints `ok`.
+
+## Run it over stdio (Claude Desktop, Claude Code)
+
+This is the default transport; no extra configuration is needed.
 
 ```bash
 cd mcp-server
 pip install -r requirements.txt
-WEB_URL=http://localhost:3000 PPTX_API_KEY=pk_... python server.py
+WEB_URL=https://mcp.maxflow.space PPTX_API_KEY=pk_... python server.py
 ```
 
-Client config (e.g. Claude Desktop `claude_desktop_config.json`, or any MCP
-client that launches a stdio command):
+Client config for any MCP client that launches a stdio command:
 
 ```json
 {
@@ -71,7 +88,7 @@ client that launches a stdio command):
       "command": "python",
       "args": ["/absolute/path/to/mcp-server/server.py"],
       "env": {
-        "WEB_URL": "http://localhost:3000",
+        "WEB_URL": "https://mcp.maxflow.space",
         "PPTX_API_KEY": "pk_your_key_here"
       }
     }
@@ -79,33 +96,11 @@ client that launches a stdio command):
 }
 ```
 
-### Option B — Docker image
-
-```bash
-docker build -f mcp-server/Dockerfile -t pptx-mcp-server .
-```
-
-```json
-{
-  "mcpServers": {
-    "pptx-mcp": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-e", "WEB_URL=http://host.docker.internal:3000",
-        "-e", "PPTX_API_KEY=pk_your_key_here",
-        "pptx-mcp-server"
-      ]
-    }
-  }
-}
-```
-
-### Claude Code
+Or via the Claude Code CLI:
 
 ```bash
 claude mcp add pptx-mcp \
-  --env WEB_URL=http://localhost:3000 \
+  --env WEB_URL=https://mcp.maxflow.space \
   --env PPTX_API_KEY=pk_your_key_here \
   -- python /absolute/path/to/mcp-server/server.py
 ```
