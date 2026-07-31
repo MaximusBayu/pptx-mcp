@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Serve the existing five pptx-mcp tools over MCP Streamable HTTP at `https://mcp.maxflow.space/mcp/` so Langflow's MCP component can call them, without changing stdio behaviour.
+**Goal:** Serve the existing five pptx-mcp tools over MCP Streamable HTTP at `https://mcp.maxflow.space/mcp` so Langflow's MCP component can call them, without changing stdio behaviour.
 
 **Architecture:** `mcp-server/server.py` gains an `MCP_TRANSPORT` switch (default `stdio`). In HTTP mode the API key is resolved per request from the `x-api-key` header instead of the environment, and every upstream call goes through one shared helper that attaches the key and maps `401`/`403` to a readable tool error. Deployment enables the previously-disabled prod service and path-mounts it behind the existing external nginx.
 
@@ -640,25 +640,37 @@ Insert this as a new section immediately before `## 6. Generate the Prisma migra
 
 The MCP server listens on `mcp-server:8765` inside the compose network and is
 not published to the host. The VPS nginx (`rise-gateway`) already terminates
-TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add a `location`
-block to that existing server block so the `/mcp/` path reaches the MCP server
-instead. nginx prefers the longest matching prefix, so every other path keeps
-going to the web app — including `/api/mcp/...`, which the MCP server itself
-calls.
+TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add two `location`
+blocks to that existing server block: one for the health probe, one for the MCP
+endpoint. The health route is an exact match, which nginx evaluates at higher
+priority, so it wins even though `/mcp` prefix matches will also match
+`/mcp/health`. Without the exact match, a request to `/mcp/health` would be
+rewritten to `/health` — which is correct — then proxied to the server, but
+`/mcp` also matches, so nginx reorders and `/mcp` wins, and the request
+becomes a loop.
 
 ```nginx
-location /mcp/ {
-    proxy_pass http://mcp-server:8765/mcp/;
+location = /mcp/health {
+    proxy_pass http://mcp-server:8765/health;
+}
+
+location /mcp {
+    proxy_pass http://mcp-server:8765;
     proxy_http_version 1.1;      # the 1.0 default breaks chunked streaming
     proxy_buffering off;         # else streamed events sit in nginx's buffer
     proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
     proxy_set_header Host $host;
-    proxy_set_header X-API-Key $http_x_api_key;
 }
 ```
 
-No DNS record and no certificate change are needed: this is a path on a host
-that already resolves and already has a certificate.
+The `proxy_pass` without a trailing slash passes the original request URI
+through unchanged. Both `/mcp` and `/mcp/` are matched by the prefix; neither
+has a path segment that is rewritten. This way, a client posting to
+`https://mcp.maxflow.space/mcp` or `https://mcp.maxflow.space/mcp/` reaches
+upstream `/mcp` without redirect loops.
+
+No DNS record and no certificate change are needed: this is a path on an
+existing host.
 
 **Verify:**
 ```bash
@@ -666,9 +678,8 @@ nginx -t && systemctl reload nginx
 curl -fsS https://mcp.maxflow.space/mcp/health   # -> ok
 ```
 
-If `curl` returns the web app's HTML instead of `ok`, the `location` block is
-not being matched — confirm it sits inside the `mcp.maxflow.space` server
-block and not a different one.
+If `curl` returns `404` or the web app's HTML, the routing is wrong — check
+that both `location` blocks sit inside the `mcp.maxflow.space` server block.
 ````
 
 - [ ] **Step 3: Rewrite the client section of `mcp-server/README.md`**
@@ -692,19 +703,19 @@ is rejected, so the deployed server holds no credential of its own.
 
 ## Run it over HTTP (Langflow, n8n, any remote MCP client)
 
-The deployed server is at `https://mcp.maxflow.space/mcp/`.
+The deployed server is at `https://mcp.maxflow.space/mcp`.
 
 In Langflow, add an **MCP Tools** component, choose **Streamable HTTP/SSE**, and fill in:
 
 | Field | Value |
 |---|---|
 | Name | `pptx` |
-| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp/` |
+| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp` |
 | Headers | key `x-api-key`, value your `pk_...` key |
 | Environment Variables | leave empty |
 
 Locally instead, `docker compose up mcp-server` serves the same thing at
-`http://localhost:8765/mcp/`.
+`http://localhost:8765/mcp`.
 
 Check it is alive with `curl -fsS https://mcp.maxflow.space/mcp/health`, which
 prints `ok`.

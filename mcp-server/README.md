@@ -35,7 +35,7 @@ is rejected, so the deployed server holds no credential of its own.
 | `get_template_schema_tool`| `template_id`                 | slot schema (slide_types[].slots[])  |
 | `render_deck_tool`        | `template_id`, `deck_spec`    | `{ validation, download_url }`        |
 | `render_preview_tool`     | `template_id`, `deck_spec`    | `{ validation, previews[] }` (PNG)    |
-| `suggest_layout_tool`     | `file_path`, `spec`           | suggested layout for a .pptx file    |
+| `suggest_layout_tool`     | `template_id`, `content`, `used` (optional) | ranked candidates: `slide_type`, `name`, `repeatable`, `score`, `reason` |
 
 `deck_spec` shape:
 
@@ -52,19 +52,19 @@ or from the template's **Use** page in the web UI.
 
 ## Run it over HTTP (Langflow, n8n, any remote MCP client)
 
-The deployed server is at `https://mcp.maxflow.space/mcp/`.
+The deployed server is at `https://mcp.maxflow.space/mcp`.
 
 In Langflow, add an **MCP Tools** component, choose **Streamable HTTP/SSE**, and fill in:
 
 | Field | Value |
 |---|---|
 | Name | `pptx` |
-| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp/` |
+| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp` |
 | Headers | key `x-api-key`, value your `pk_...` key |
 | Environment Variables | leave empty |
 
 Locally instead, `docker compose up mcp-server` serves the same thing at
-`http://localhost:8765/mcp/`.
+`http://localhost:8765/mcp`.
 
 Check it is alive with `curl -fsS https://mcp.maxflow.space/mcp/health`, which
 prints `ok`.

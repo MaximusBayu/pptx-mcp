@@ -118,8 +118,8 @@ chmod 600 .env
 ## 5. Production compose override
 
 Create `compose.prod.yml` (adds restart policies, **named volumes for
-persistence**, stops publishing internal ports, health checks, and a Caddy
-reverse proxy that terminates TLS):
+persistence**, stops publishing internal ports, and health checks). TLS and
+ingress are handled by an external nginx (`rise-gateway`):
 
 ```bash
 cat > compose.prod.yml <<'EOF'
@@ -170,49 +170,25 @@ services:
       timeout: 5s
       retries: 5
 
-  # The stdio MCP proxy is not needed for the HTTP service. Disable it in prod.
   mcp-server:
-    deploy:
-      replicas: 0
-
-  caddy:
-    image: caddy:2
     restart: unless-stopped
-    depends_on: [web, minio]
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+    ports: !reset []
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/health',timeout=3).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+# TLS + ingress are handled by an external nginx (rise-gateway) that
+# proxies to web:3000 and minio:9000 over the shared docker network, so
+# no reverse proxy is defined here and no host ports are published
+# (!reset [] above).
 
 volumes:
   pgdata:
   miniodata:
-  caddy_data:
-  caddy_config:
 EOF
 ```
-
-Create the `Caddyfile` (automatic Let's Encrypt TLS):
-
-```bash
-cat > Caddyfile <<'EOF'
-app.example.com {
-    reverse_proxy web:3000
-}
-
-files.example.com {
-    # Preserve Host so MinIO presigned-URL signatures validate.
-    reverse_proxy minio:9000 {
-        header_up Host {host}
-    }
-}
-EOF
-```
-
-> Replace both hostnames with your real domains before continuing.
 
 Define a stable compose alias for the rest of this runbook:
 
@@ -230,25 +206,37 @@ confirms `!reset` is supported).
 
 The MCP server listens on `mcp-server:8765` inside the compose network and is
 not published to the host. The VPS nginx (`rise-gateway`) already terminates
-TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add a `location`
-block to that existing server block so the `/mcp/` path reaches the MCP server
-instead. nginx prefers the longest matching prefix, so every other path keeps
-going to the web app — including `/api/mcp/...`, which the MCP server itself
-calls.
+TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add two `location`
+blocks to that existing server block: one for the health probe, one for the MCP
+endpoint. The health route is an exact match, which nginx evaluates at higher
+priority, so it wins even though `/mcp` prefix matches will also match
+`/mcp/health`. Without the exact match, a request to `/mcp/health` would be
+rewritten to `/health` — which is correct — then proxied to the server, but
+`/mcp` also matches, so nginx reorders and `/mcp` wins, and the request
+becomes a loop.
 
 ```nginx
-location /mcp/ {
-    proxy_pass http://mcp-server:8765/mcp/;
+location = /mcp/health {
+    proxy_pass http://mcp-server:8765/health;
+}
+
+location /mcp {
+    proxy_pass http://mcp-server:8765;
     proxy_http_version 1.1;      # the 1.0 default breaks chunked streaming
     proxy_buffering off;         # else streamed events sit in nginx's buffer
     proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
     proxy_set_header Host $host;
-    proxy_set_header X-API-Key $http_x_api_key;
 }
 ```
 
-No DNS record and no certificate change are needed: this is a path on a host
-that already resolves and already has a certificate.
+The `proxy_pass` without a trailing slash passes the original request URI
+through unchanged. Both `/mcp` and `/mcp/` are matched by the prefix; neither
+has a path segment that is rewritten. This way, a client posting to
+`https://mcp.maxflow.space/mcp` or `https://mcp.maxflow.space/mcp/` reaches
+upstream `/mcp` without redirect loops.
+
+No DNS record and no certificate change are needed: this is a path on an
+existing host.
 
 **Verify:**
 ```bash
@@ -256,9 +244,8 @@ nginx -t && systemctl reload nginx
 curl -fsS https://mcp.maxflow.space/mcp/health   # -> ok
 ```
 
-If `curl` returns the web app's HTML instead of `ok`, the `location` block is
-not being matched — confirm it sits inside the `mcp.maxflow.space` server
-block and not a different one.
+If `curl` returns `404` or the web app's HTML, the routing is wrong — check
+that both `location` blocks sit inside the `mcp.maxflow.space` server block.
 
 ---
 
@@ -291,9 +278,9 @@ dc up -d
 ```
 The `web` container runs `prisma migrate deploy` automatically on start.
 
-**Verify (wait ~60s for TLS issuance + health):**
+**Verify (wait ~60s for health):**
 ```bash
-dc ps          # postgres/minio/engine-service/web/caddy = running/healthy
+dc ps          # postgres/minio/engine-service/web/mcp-server = running/healthy
 curl -fsS https://app.example.com/login >/dev/null && echo "web OK"
 curl -fsS https://files.example.com/minio/health/live >/dev/null && echo "files OK"
 ```
@@ -450,13 +437,13 @@ rolling the code back, then redeploy the older code.
 | Task | Command |
 |------|---------|
 | Status / health | `dc ps` |
-| Tail logs | `dc logs -f web` (or `engine-service`, `caddy`) |
+| Tail logs | `dc logs -f web` (or `engine-service`, `mcp-server`) |
 | Restart one service | `dc restart web` |
 | Full restart | `dc up -d` |
 | Stop everything | `dc down` (keeps volumes/data) |
 | Disk usage | `docker system df` ; `df -h` |
 | Reclaim space | `docker image prune -f` (safe) ; **never** `down -v` in prod (wipes data) |
-| Renew TLS | automatic (Caddy) — nothing to do |
+| Renew TLS | handled by external nginx (`rise-gateway`) — nothing to do here |
 | Rotate an API key | user deletes + recreates in **Settings → API keys** |
 | Rotate AUTH_SECRET | edit `.env` → `dc up -d web` (logs out all sessions) |
 | Rotate DB/MinIO creds | update `.env` consistently (DATABASE_URL + S3_* must match) → `dc up -d` |
@@ -466,8 +453,8 @@ rolling the code back, then redeploy the older code.
 ## 14. Definition of done
 
 - [ ] `dig` resolves both hosts to the VPS.
-- [ ] `dc ps` shows postgres, minio, engine-service, web, caddy all up; web +
-      engine-service **healthy**.
+- [ ] `dc ps` shows postgres, minio, engine-service, web, mcp-server all up; web +
+      engine-service + mcp-server **healthy**.
 - [ ] `https://app.example.com/login` returns 200 over valid TLS.
 - [ ] `https://files.example.com/minio/health/live` returns 200.
 - [ ] Smoke test render returns a `download_url` that opens a real `.pptx`.
@@ -488,8 +475,9 @@ origin/Max-dev` → `dc build` → `dc up -d` → prune → health check).
 ### One-time server prep
 - The repo at `${DEPLOY_PATH}` (default `/opt/pptx-mcp`) must be a git clone
   with an `origin` remote the deploy user can `git fetch`.
-- `compose.prod.yml`, `Caddyfile`, and `.env` must already exist on the box
-  (steps 4–5). CD never creates secrets; it only rebuilds/restarts.
+- `compose.prod.yml` and `.env` must already exist on the box (steps 4–5). CD
+  never creates secrets; it only rebuilds/restarts. The external nginx
+  (`rise-gateway`) and its location block (§5b) are managed separately.
 - Create a deploy SSH keypair; put the **public** key in the deploy user's
   `~/.ssh/authorized_keys`. The **private** key goes in the `SSH_KEY` secret.
 - The deploy user must be able to run `docker compose` (in the `docker` group).
@@ -519,8 +507,8 @@ Actions → **CD** → *Run workflow* (uses `workflow_dispatch`).
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `dc config` errors on `!reset` | Compose < 2.24 | upgrade Docker, or in `docker-compose.yml` bind ports to `127.0.0.1:` and drop the `!reset` lines |
-| TLS won't issue | DNS not pointing at VPS, or 80/443 blocked | fix A records / firewall; `dc logs caddy` |
-| `download_url` won't open | `S3_PUBLIC_ENDPOINT` not public, or Host not preserved | confirm `files.example.com` resolves + `header_up Host {host}` in Caddyfile |
+| TLS won't issue | DNS not pointing at VPS, or 80/443 blocked | fix A records / firewall; check external nginx (`rise-gateway`) logs |
+| `download_url` won't open | `S3_PUBLIC_ENDPOINT` not public, or Host not preserved | confirm `files.example.com` resolves + its nginx proxy preserves Host |
 | web crashes on boot | bad `DATABASE_URL` or missing migration | `dc logs web`; re-check `.env`; ensure step 6 ran |
 | 401 on `/api/mcp/...` | wrong/disabled API key | recreate key in the UI; send header `x-api-key:` |
 | render 500 / blank slides | engine-service down or OOM | `dc logs engine-service`; increase VPS RAM (LibreOffice) |

@@ -34,7 +34,7 @@ Scope is the transport and its ingress. Tool behaviour is unchanged.
 
 ## Goal
 
-`https://mcp.maxflow.space/mcp/` speaks MCP Streamable HTTP. A Langflow MCP
+`https://mcp.maxflow.space/mcp` speaks MCP Streamable HTTP. A Langflow MCP
 component configured with that URL and an `x-api-key` header lists and calls the
 five existing tools. stdio keeps working unchanged for existing clients.
 
@@ -61,8 +61,9 @@ the one route we want).
 
 ```
 Langflow ──HTTPS──> rise-gateway (nginx, VPS host)
-                      location /mcp/  -> mcp-server:8765/mcp/
-                      location /      -> web:3000
+                      location = /mcp/health -> mcp-server:8765/health
+                      location /mcp          -> mcp-server:8765
+                      location /             -> web:3000
 mcp-server ──HTTP──> web:3000/api/mcp/...   (docker network, x-api-key forwarded)
 ```
 
@@ -134,18 +135,23 @@ at `http://localhost:8765/mcp/`.
 rise-gateway reaches `mcp-server:8765` over the shared docker network, matching
 the existing `!reset []` policy for every other service.
 
-**rise-gateway (external, not in this repository)** — a `location /mcp/` block
-inside the existing `mcp.maxflow.space` server block, proxying to
-`http://mcp-server:8765/mcp/`. nginx prefers the longest matching prefix, so
-`/mcp/` wins over `/` while every other path still reaches `web:3000`. Three
-directives are required or streaming responses stall:
+**rise-gateway (external, not in this repository)** — two `location` blocks
+inside the existing `mcp.maxflow.space` server block. An exact-match `location
+/mcp/health` routes the health probe; a prefix-match `location /mcp` routes all
+MCP requests to the server, with no URI rewriting. Three directives are required
+or streaming responses stall:
 
 ```nginx
-location /mcp/ {
-    proxy_pass http://mcp-server:8765/mcp/;
+location = /mcp/health {
+    proxy_pass http://mcp-server:8765/health;
+}
+
+location /mcp {
+    proxy_pass http://mcp-server:8765;
     proxy_http_version 1.1;      # default 1.0 breaks chunked streaming
     proxy_buffering off;         # else SSE events queue in nginx's buffer
     proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
+    proxy_set_header Host $host;
 }
 ```
 
@@ -158,7 +164,7 @@ change are needed. The snippet and its verification step are documented in
 | Field | Value |
 |---|---|
 | Name | `pptx` |
-| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp/` |
+| Streamable HTTP/SSE URL | `https://mcp.maxflow.space/mcp` |
 | Headers | `x-api-key` → the `pk_...` key |
 | Environment variables | none |
 
