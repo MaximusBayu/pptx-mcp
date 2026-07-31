@@ -33,7 +33,7 @@ is rejected, so the deployed server holds no credential of its own.
 |---------------------------|-------------------------------|--------------------------------------|
 | `list_templates_tool`     | —                             | templates available to the key       |
 | `get_template_schema_tool`| `template_id`                 | slot schema (slide_types[].slots[])  |
-| `render_deck_tool`        | `template_id`, `deck_spec`    | `{ validation, download_url }`        |
+| `render_deck_tool`        | `template_id`, `deck_spec`    | `{ validation, download_url, warnings }` |
 | `render_preview_tool`     | `template_id`, `deck_spec`    | `{ validation, previews[] }` (PNG)    |
 | `suggest_layout_tool`     | `template_id`, `content`, `used` (optional) | ranked candidates: `slide_type`, `name`, `repeatable`, `score`, `reason` |
 

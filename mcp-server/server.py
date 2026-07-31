@@ -38,7 +38,12 @@ def _request(method: str, path: str, api_key: str, **kw):
                       headers={"X-API-Key": api_key}, **kw)
     if r.status_code in (401, 403):
         raise ToolError("invalid or revoked API key")
-    r.raise_for_status()
+    if r.is_error:
+        # httpx.Response.raise_for_status()'s message embeds the full
+        # internal URL (e.g. http://web:3000/api/mcp/templates), which would
+        # disclose internal topology to a remote MCP caller. Name the
+        # operation and status instead.
+        raise ToolError(f"upstream error {r.status_code} calling {path}")
     return r.json()
 
 

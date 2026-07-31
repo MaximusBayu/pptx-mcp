@@ -54,3 +54,6 @@ Thumbs.db
 .playwright*
 template example/
 docs/
+
+# ---- Agent scratch (working records, not source) ----
+.superpowers/

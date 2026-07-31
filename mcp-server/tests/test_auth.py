@@ -61,9 +61,21 @@ def test_upstream_403_maps_to_tool_error(monkeypatch):
 
 
 @respx.mock
-def test_upstream_500_still_raises_http_error(monkeypatch):
+def test_upstream_500_maps_to_tool_error_without_leaking_internal_host(monkeypatch):
+    """A non-401/403 upstream failure must not leak internal topology.
+
+    httpx.Response.raise_for_status() embeds the full request URL (e.g.
+    http://web:3000/api/mcp/templates) in its message, and that message is
+    relayed straight to the remote MCP caller. The status and the relative
+    API path are useful to the caller; the internal hostname is not.
+    """
     monkeypatch.setenv("WEB_URL", BASE)
     respx.get(f"{BASE}/api/mcp/templates").mock(
         return_value=httpx.Response(500, text="boom"))
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(ToolError) as excinfo:
         server.list_templates("pk_ok")
+    message = str(excinfo.value)
+    assert "500" in message
+    assert "/api/mcp/templates" in message
+    assert BASE not in message
+    assert "web:3000" not in message

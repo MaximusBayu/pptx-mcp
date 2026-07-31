@@ -138,8 +138,17 @@ the existing `!reset []` policy for every other service.
 **rise-gateway (external, not in this repository)** — two `location` blocks
 inside the existing `mcp.maxflow.space` server block. An exact-match `location
 /mcp/health` routes the health probe; a prefix-match `location /mcp` routes all
-MCP requests to the server, with no URI rewriting. Three directives are required
-or streaming responses stall:
+MCP requests to the server, with no URI rewriting. `proxy_pass` uses a bare
+upstream hostname (no `resolver`/`upstream` block), so nginx resolves
+`mcp-server` when the config is **parsed**, not per request — the `mcp-server`
+container must already be running before this config is applied, or `nginx -t`
+fails with `host not found in upstream "mcp-server"` and a later plain nginx
+restart would refuse to start and take the web app on that host down with it.
+`DEPLOY.md` documents this as `§7b`, placed after the section that starts the
+containers rather than immediately after the compose override.
+
+Three directives are required or streaming responses stall, and a fourth
+prevents a scheme downgrade on the app's own redirect:
 
 ```nginx
 location = /mcp/health {
@@ -152,8 +161,22 @@ location /mcp {
     proxy_buffering off;         # else SSE events queue in nginx's buffer
     proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
     proxy_set_header Host $host;
+    proxy_redirect http:// https://;   # a 307 from /mcp/ must not downgrade the scheme —
+                                       # it would re-send x-api-key over plaintext port 80
 }
 ```
+
+`proxy_pass` without a trailing slash passes the request URI through
+unchanged, so `/mcp/` reaches the app as `/mcp/` unrewritten and the app
+answers with its own 307 redirect to `/mcp`. nginx does not follow or
+re-route that redirect — it relays the response as-is. Without
+`proxy_redirect`, the `Location` header on that 307 would be absolute with
+scheme `http` (the app sees a plain-HTTP request from nginx, and the block
+sets no `X-Forwarded-Proto`), and since a 307 preserves method, body, and
+headers, a client following it would resend `x-api-key` in the clear on port
+80. `proxy_redirect http:// https://;` rewrites that `Location` back to
+`https://` before it reaches the client, so the retry lands on
+`https://mcp.maxflow.space/mcp` over TLS, matched by this same prefix block.
 
 Because this is a path on an existing host, no DNS record and no certificate
 change are needed. The snippet and its verification step are documented in

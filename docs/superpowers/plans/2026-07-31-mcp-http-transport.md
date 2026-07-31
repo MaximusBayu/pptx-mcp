@@ -633,10 +633,20 @@ Line 118 currently reads `## 5. Production compose override + Caddy`. Caddy was 
 
 - [ ] **Step 2: Add the ingress step to `DEPLOY.md`**
 
-Insert this as a new section immediately before `## 6. Generate the Prisma migration (first deploy only)`. It is numbered `5b` so every existing step reference stays valid.
+Insert this as a new section immediately after `## 7. Build & start` and before
+`## 8. Smoke test (prove the chain)`. It is numbered `7b` — placed after the
+section that starts the `mcp-server` container, since `proxy_pass` uses a bare
+hostname that nginx resolves when its config is parsed, not per-request; every
+existing step reference stays valid because no other section is renumbered.
 
 ````markdown
-## 5b. Expose the MCP server through nginx
+## 7b. Expose the MCP server through nginx
+
+The `mcp-server` container must already be running before this step: nginx
+resolves the `mcp-server` upstream hostname when its config is parsed, not per
+request, so `nginx -t` here would otherwise fail with `host not found in
+upstream "mcp-server"`, and later a plain nginx restart (reboot, package
+upgrade) would refuse to start and take the web app on that host down with it.
 
 The MCP server listens on `mcp-server:8765` inside the compose network and is
 not published to the host. The VPS nginx (`rise-gateway`) already terminates
@@ -660,15 +670,22 @@ location /mcp {
     proxy_buffering off;         # else streamed events sit in nginx's buffer
     proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
     proxy_set_header Host $host;
+    proxy_redirect http:// https://;   # a 307 from /mcp/ must not downgrade the scheme —
+                                       # it would re-send x-api-key over plaintext port 80
 }
 ```
 
 The `proxy_pass` without a trailing slash passes the original request URI
-through unchanged. A request to `/mcp/` is sent upstream as `/mcp/` and the
-server responds with a 307 redirect to `/mcp`, which nginx then re-routes. The
-prefix `location /mcp` matches both `/mcp` and `/mcp/`, so the redirect stays
-inside the same location block and resolves without escaping to a catch-all or
-falling through. This is precisely why the trailing slash is no longer fatal.
+through unchanged, so a request to `/mcp/` reaches the app as `/mcp/`
+unrewritten. The app itself answers with a 307 redirect to `/mcp`. nginx does
+not follow or re-route that redirect — it hands the response straight back to
+the client. Left alone, the `Location` header on that 307 would be absolute
+with scheme `http` (the app sees a plain-HTTP request from nginx, and the
+block sets no `X-Forwarded-Proto`), and because a 307 preserves method, body,
+and headers, a client following it would resend `x-api-key` in the clear on
+port 80. `proxy_redirect http:// https://;` rewrites that `Location` back to
+`https://` before it reaches the client, so the retry lands on
+`https://mcp.maxflow.space/mcp` over TLS, matched by this same prefix block.
 
 No DNS record and no certificate change are needed: this is a path on an
 existing host.

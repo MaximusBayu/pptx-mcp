@@ -66,8 +66,8 @@ jobs:
           set -euo pipefail
           cd "${DEPLOY_PATH}"
 
-          # Prefer the prod override (TLS via Caddy, no exposed internal
-          # ports, named volumes). Fall back to plain compose if it's absent.
+          # Prefer the prod override (TLS via the external nginx, no exposed
+          # internal ports, named volumes). Fall back to plain compose if it's absent.
           if [ -f compose.prod.yml ]; then
             DC="docker compose -f docker-compose.yml -f compose.prod.yml"
           else
@@ -97,20 +97,21 @@ jobs:
           echo "==> status"
           $DC ps
 
-          # Primary gate: wait for web + engine-service to report healthy via
-          # their container healthchecks. Works even when ports are unpublished
-          # (compose.prod.yml uses !reset [], so no host curl is possible).
+          # Primary gate: wait for web + engine-service + mcp-server to report
+          # healthy via their container healthchecks. Works even when ports
+          # are unpublished (compose.prod.yml uses !reset [], so no host curl
+          # is possible).
           echo "==> waiting for containers to become healthy"
           gate_ok=0
           for i in $(seq 1 30); do
             unhealthy=$($DC ps --format '{{.Service}} {{.Health}} {{.State}}' \
-              | awk '$1=="web" || $1=="engine-service" {print}' \
+              | awk '$1=="web" || $1=="engine-service" || $1=="mcp-server" {print}' \
               | awk '$2!="healthy" {print $1}')
             if [ -z "$unhealthy" ]; then echo "containers healthy"; gate_ok=1; break; fi
             sleep 6
           done
           if [ "$gate_ok" != "1" ]; then
-            echo "containers did not become healthy"; $DC ps; $DC logs --tail=80 web engine-service; exit 1
+            echo "containers did not become healthy"; $DC ps; $DC logs --tail=80 web engine-service mcp-server; exit 1
           fi
 
           # Optional external check (only meaningful once TLS/ingress exists).

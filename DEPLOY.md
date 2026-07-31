@@ -202,54 +202,6 @@ confirms `!reset` is supported).
 
 ---
 
-## 5b. Expose the MCP server through nginx
-
-The MCP server listens on `mcp-server:8765` inside the compose network and is
-not published to the host. The VPS nginx (`rise-gateway`) already terminates
-TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add two `location`
-blocks to that existing server block: one for the health probe, one for the MCP
-endpoint. An exact-match `location = /mcp/health` maps the public health URL
-onto the real root-level `/health` route. Without it, a request to
-`/mcp/health` would match `location /mcp` (prefix) and be sent upstream
-unchanged to `/mcp/health`, which does not exist, returning 404. nginx
-evaluates exact matches ahead of prefix matches, so the exact-match block takes
-precedence and prevents the 404.
-
-```nginx
-location = /mcp/health {
-    proxy_pass http://mcp-server:8765/health;
-}
-
-location /mcp {
-    proxy_pass http://mcp-server:8765;
-    proxy_http_version 1.1;      # the 1.0 default breaks chunked streaming
-    proxy_buffering off;         # else streamed events sit in nginx's buffer
-    proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
-    proxy_set_header Host $host;
-}
-```
-
-The `proxy_pass` without a trailing slash passes the original request URI
-through unchanged. A request to `/mcp/` is sent upstream as `/mcp/` and the
-server responds with a 307 redirect to `/mcp`, which nginx then re-routes. The
-prefix `location /mcp` matches both `/mcp` and `/mcp/`, so the redirect stays
-inside the same location block and resolves without escaping to a catch-all or
-falling through. This is precisely why the trailing slash is no longer fatal.
-
-No DNS record and no certificate change are needed: this is a path on an
-existing host.
-
-**Verify:**
-```bash
-nginx -t && systemctl reload nginx
-curl -fsS https://mcp.maxflow.space/mcp/health   # -> ok
-```
-
-If `curl` returns `404` or the web app's HTML, the routing is wrong — check
-that both `location` blocks sit inside the `mcp.maxflow.space` server block.
-
----
-
 ## 6. Generate the Prisma migration (first deploy only)
 
 If `web/prisma/migrations/` already exists in the repo, **skip this step**.
@@ -285,6 +237,67 @@ dc ps          # postgres/minio/engine-service/web/mcp-server = running/healthy
 curl -fsS https://app.example.com/login >/dev/null && echo "web OK"
 curl -fsS https://files.example.com/minio/health/live >/dev/null && echo "files OK"
 ```
+
+---
+
+## 7b. Expose the MCP server through nginx
+
+The `mcp-server` container must already be running before this step: nginx
+resolves the `mcp-server` upstream hostname when its config is parsed, not per
+request, so `nginx -t` here would otherwise fail with `host not found in
+upstream "mcp-server"`, and later a plain nginx restart (reboot, package
+upgrade) would refuse to start and take the web app on that host down with it.
+
+The MCP server listens on `mcp-server:8765` inside the compose network and is
+not published to the host. The VPS nginx (`rise-gateway`) already terminates
+TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add two `location`
+blocks to that existing server block: one for the health probe, one for the MCP
+endpoint. An exact-match `location = /mcp/health` maps the public health URL
+onto the real root-level `/health` route. Without it, a request to
+`/mcp/health` would match `location /mcp` (prefix) and be sent upstream
+unchanged to `/mcp/health`, which does not exist, returning 404. nginx
+evaluates exact matches ahead of prefix matches, so the exact-match block takes
+precedence and prevents the 404.
+
+```nginx
+location = /mcp/health {
+    proxy_pass http://mcp-server:8765/health;
+}
+
+location /mcp {
+    proxy_pass http://mcp-server:8765;
+    proxy_http_version 1.1;      # the 1.0 default breaks chunked streaming
+    proxy_buffering off;         # else streamed events sit in nginx's buffer
+    proxy_read_timeout 3600s;    # else long renders are cut at the 60s default
+    proxy_set_header Host $host;
+    proxy_redirect http:// https://;   # a 307 from /mcp/ must not downgrade the scheme —
+                                       # it would re-send x-api-key over plaintext port 80
+}
+```
+
+The `proxy_pass` without a trailing slash passes the original request URI
+through unchanged, so a request to `/mcp/` reaches the app as `/mcp/`
+unrewritten. The app itself answers with a 307 redirect to `/mcp`. nginx does
+not follow or re-route that redirect — it hands the response straight back to
+the client. Left alone, the `Location` header on that 307 would be absolute
+with scheme `http` (the app sees a plain-HTTP request from nginx, and the
+block sets no `X-Forwarded-Proto`), and because a 307 preserves method, body,
+and headers, a client following it would resend `x-api-key` in the clear on
+port 80. `proxy_redirect http:// https://;` rewrites that `Location` back to
+`https://` before it reaches the client, so the retry lands on
+`https://mcp.maxflow.space/mcp` over TLS, matched by this same prefix block.
+
+No DNS record and no certificate change are needed: this is a path on an
+existing host.
+
+**Verify:**
+```bash
+nginx -t && systemctl reload nginx
+curl -fsS https://mcp.maxflow.space/mcp/health   # -> ok
+```
+
+If `curl` returns `404` or the web app's HTML, the routing is wrong — check
+that both `location` blocks sit inside the `mcp.maxflow.space` server block.
 
 ---
 
@@ -478,7 +491,7 @@ origin/Max-dev` → `dc build` → `dc up -d` → prune → health check).
   with an `origin` remote the deploy user can `git fetch`.
 - `compose.prod.yml` and `.env` must already exist on the box (steps 4–5). CD
   never creates secrets; it only rebuilds/restarts. The external nginx
-  (`rise-gateway`) and its location block (§5b) are managed separately.
+  (`rise-gateway`) and its location block (§7b) are managed separately.
 - Create a deploy SSH keypair; put the **public** key in the deploy user's
   `~/.ssh/authorized_keys`. The **private** key goes in the `SSH_KEY` secret.
 - The deploy user must be able to run `docker compose` (in the `docker` group).
