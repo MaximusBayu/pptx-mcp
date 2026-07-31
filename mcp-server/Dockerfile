@@ -3,4 +3,5 @@ WORKDIR /srv/mcp-server
 COPY mcp-server/requirements.txt .
 RUN pip install -r requirements.txt
 COPY mcp-server/ .
+EXPOSE 8765
 CMD ["python", "server.py"]

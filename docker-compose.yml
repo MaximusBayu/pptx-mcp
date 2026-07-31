@@ -44,4 +44,7 @@ services:
   mcp-server:
     build: { context: ., dockerfile: mcp-server/Dockerfile }
     env_file: .env
+    environment:
+      MCP_TRANSPORT: http
     depends_on: [web]
+    ports: ["8765:8765"]
