@@ -1,47 +1,70 @@
 import os
 
 import httpx
+from fastmcp.exceptions import ToolError
 
 
 def _base() -> str:
     return os.environ.get("WEB_URL", "http://web:3000")
 
 
-def _headers() -> dict:
-    return {"X-API-Key": os.environ.get("PPTX_API_KEY", "")}
+def _transport() -> str:
+    # `or "stdio"` also covers MCP_TRANSPORT being set but empty, which a
+    # compose file or a shell prefix can easily produce; a bare .get() would
+    # return "" there and fail the transport check.
+    return (os.environ.get("MCP_TRANSPORT") or "stdio").strip().lower()
 
 
-def list_templates() -> list:
-    r = httpx.get(f"{_base()}/api/mcp/templates", headers=_headers(), timeout=30)
+def _api_key() -> str:
+    """Resolve the caller's API key for the active transport.
+
+    Over HTTP the key belongs to the caller and arrives per request; falling
+    back to PPTX_API_KEY there would serve anonymous callers under the
+    operator's key. Over stdio the client launched this process, so the
+    environment is the only channel available.
+    """
+    if _transport() == "stdio":
+        return os.environ.get("PPTX_API_KEY", "")
+    from fastmcp.server.dependencies import get_http_headers
+    key = get_http_headers().get("x-api-key", "").strip()
+    if not key:
+        raise ToolError("missing x-api-key header")
+    return key
+
+
+def _request(method: str, path: str, api_key: str, **kw):
+    r = httpx.request(method, f"{_base()}{path}",
+                      headers={"X-API-Key": api_key}, **kw)
+    if r.status_code in (401, 403):
+        raise ToolError("invalid or revoked API key")
     r.raise_for_status()
     return r.json()
 
 
-def get_template_schema(template_id: str) -> dict:
-    r = httpx.get(f"{_base()}/api/mcp/templates/{template_id}/schema", headers=_headers(), timeout=30)
-    r.raise_for_status()
-    return r.json()
+def list_templates(api_key: str) -> list:
+    return _request("GET", "/api/mcp/templates", api_key, timeout=30)
 
 
-def render_deck(template_id: str, deck_spec: dict) -> dict:
-    r = httpx.post(f"{_base()}/api/mcp/templates/{template_id}/render",
-                   headers=_headers(), json={"deck_spec": deck_spec}, timeout=120)
-    r.raise_for_status()
-    return r.json()
+def get_template_schema(template_id: str, api_key: str) -> dict:
+    return _request("GET", f"/api/mcp/templates/{template_id}/schema",
+                    api_key, timeout=30)
 
 
-def render_preview(template_id: str, deck_spec: dict) -> dict:
-    r = httpx.post(f"{_base()}/api/mcp/templates/{template_id}/preview",
-                   headers=_headers(), json={"deck_spec": deck_spec}, timeout=120)
-    r.raise_for_status()
-    return r.json()
+def render_deck(template_id: str, deck_spec: dict, api_key: str) -> dict:
+    return _request("POST", f"/api/mcp/templates/{template_id}/render",
+                    api_key, json={"deck_spec": deck_spec}, timeout=120)
 
 
-def suggest_layout(template_id: str, content: str, used: dict | None = None) -> dict:
-    r = httpx.post(f"{_base()}/api/mcp/templates/{template_id}/suggest-layout",
-                   headers=_headers(), json={"content": content, "used": used or {}}, timeout=30)
-    r.raise_for_status()
-    return r.json()
+def render_preview(template_id: str, deck_spec: dict, api_key: str) -> dict:
+    return _request("POST", f"/api/mcp/templates/{template_id}/preview",
+                    api_key, json={"deck_spec": deck_spec}, timeout=120)
+
+
+def suggest_layout(template_id: str, content: str, used: dict | None,
+                   api_key: str) -> dict:
+    return _request("POST", f"/api/mcp/templates/{template_id}/suggest-layout",
+                    api_key, json={"content": content, "used": used or {}},
+                    timeout=30)
 
 
 def build_server():
@@ -55,7 +78,7 @@ def build_server():
         Start here, then call get_template_schema_tool(template_id) to learn a
         template's slots, then render_deck_tool to produce the .pptx.
         """
-        return list_templates()
+        return list_templates(_api_key())
 
     @mcp.tool()
     def get_template_schema_tool(template_id: str) -> dict:
@@ -66,7 +89,7 @@ def build_server():
         reused — to emit it N times, list it once per item in deck_spec.slides.
         Copy example_deck_spec and replace the example values with your content.
         """
-        return get_template_schema(template_id)
+        return get_template_schema(template_id, _api_key())
 
     @mcp.tool()
     def render_deck_tool(template_id: str, deck_spec: dict) -> dict:
@@ -77,7 +100,7 @@ def build_server():
         URL or a data:image/...;base64,... string. If validation is non-empty the
         deck was rejected — read each message, fix the listed slots, and retry.
         """
-        return render_deck(template_id, deck_spec)
+        return render_deck(template_id, deck_spec, _api_key())
 
     @mcp.tool()
     def render_preview_tool(template_id: str, deck_spec: dict) -> dict:
@@ -85,7 +108,7 @@ def build_server():
 
         Use this to eyeball layout before render_deck_tool produces the final file.
         """
-        return render_preview(template_id, deck_spec)
+        return render_preview(template_id, deck_spec, _api_key())
 
     @mcp.tool()
     def suggest_layout_tool(template_id: str, content: str, used: dict | None = None) -> dict:
@@ -98,7 +121,7 @@ def build_server():
         repeat, while repeatable layouts are exempt (reuse them once per item,
         e.g. one finding slide per finding).
         """
-        return suggest_layout(template_id, content, used)
+        return suggest_layout(template_id, content, used, _api_key())
 
     return mcp
 
