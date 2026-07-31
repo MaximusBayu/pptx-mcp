@@ -2,6 +2,7 @@ import os
 
 import httpx
 from fastmcp.exceptions import ToolError
+from starlette.responses import PlainTextResponse
 
 
 def _base() -> str:
@@ -71,6 +72,16 @@ def build_server():
     from fastmcp import FastMCP
     mcp = FastMCP("pptx-mcp")
 
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health(_request):
+        """Plain-HTTP liveness probe.
+
+        The MCP endpoint rejects requests without MCP-shaped Accept headers,
+        so container healthchecks and proxy probes need a route that speaks
+        ordinary HTTP.
+        """
+        return PlainTextResponse("ok")
+
     @mcp.tool()
     def list_templates_tool() -> list:
         """List templates available to this API key.
@@ -126,5 +137,21 @@ def build_server():
     return mcp
 
 
+def main() -> None:
+    transport = _transport()
+    if transport == "stdio":
+        build_server().run()
+    elif transport in ("http", "streamable-http"):
+        build_server().run(
+            transport="http",
+            host=os.environ.get("MCP_HOST", "0.0.0.0"),
+            port=int(os.environ.get("MCP_PORT", "8765")),
+            stateless_http=True,
+        )
+    else:
+        raise SystemExit(
+            f"unknown MCP_TRANSPORT {transport!r}; expected 'stdio' or 'http'")
+
+
 if __name__ == "__main__":
-    build_server().run()
+    main()
