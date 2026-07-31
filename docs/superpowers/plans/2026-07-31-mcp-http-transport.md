@@ -17,7 +17,7 @@
 - HTTP mode runs with `stateless_http=True`.
 - `fastmcp>=3.2` — lower versions lack `transport="http"` and `get_http_headers`.
 - Only the five existing tools are exposed. Do not add composition tools.
-- Hostname is `mcp.maxflow.space`; MCP is mounted at the **path** `/mcp/`. That host already serves the web app at `/`, so nothing may claim the whole host.
+- Hostname is `mcp.maxflow.space`; MCP is mounted at the **path** `/mcp`. That host already serves the web app at `/`, so nothing may claim the whole host.
 - No `ports:` for `mcp-server` in `compose.prod.yml` — external nginx reaches it over the docker network, matching the `!reset []` policy used by every other service.
 - Tests run with `python -m pytest -q` from the `mcp-server/` directory. Baseline before this plan: **5 passed**.
 
@@ -36,7 +36,7 @@
 | `docker-compose.yml` | Dev: run in HTTP mode, publish 8765 | 3 |
 | `compose.prod.yml` | Prod: enable the service, healthcheck, no published ports | 3 |
 | `.env.example` | Document the new variables | 3 |
-| `DEPLOY.md` | nginx `location /mcp/` step and its verification | 4 |
+| `DEPLOY.md` | nginx location blocks for /mcp/health and /mcp, and their verification | 4 |
 | `mcp-server/README.md` | HTTP mode and Langflow setup | 4 |
 
 ---
@@ -593,7 +593,7 @@ Expected: prints `ok`.
 
 Then confirm the MCP endpoint answers a real client, not just the health route:
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8765/mcp/
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8765/mcp
 ```
 Expected: a non-404 status (a plain GET is not a valid MCP request; the point is that the route exists).
 
@@ -620,7 +620,7 @@ and get_http_headers do not exist."
 - Modify: `mcp-server/README.md:51-111` (the "Run it from an MCP client" section)
 
 **Interfaces:**
-- Consumes: the `mcp-server:8765` service from Task 3 and the `/mcp/` path from Task 2.
+- Consumes: the `mcp-server:8765` service from Task 3 and the `/mcp` path from Task 2.
 - Produces: no code.
 
 - [ ] **Step 1: Fix the stale section heading in `DEPLOY.md`**
@@ -769,14 +769,16 @@ Expected: all three variables the README documents are read by the code.
 
 ```bash
 git add DEPLOY.md mcp-server/README.md
-git commit -m "docs: nginx ingress for /mcp/ and HTTP client setup
+git commit -m "docs: nginx ingress for /mcp and HTTP client setup
 
-Document the location block that routes mcp.maxflow.space/mcp/ to the MCP
-server while every other path keeps reaching the web app, including the
-/api/mcp routes the MCP server itself calls. The three streaming
-directives are not optional: nginx's defaults buffer events and cut the
-connection at 60s. Also drop 'Caddy' from the section 5 heading, stale
-since fd3d896."
+Document two location blocks that route mcp.maxflow.space/mcp to the MCP
+server: an exact-match /mcp/health for the health probe, and a prefix /mcp
+for the MCP endpoint. The prefix catches both /mcp and /mcp/ requests
+without rewriting, which prevents redirect loops. Every other path keeps
+reaching the web app, including the /api/mcp routes the MCP server itself
+calls. The three streaming directives are not optional: nginx's defaults
+buffer events and cut the connection at 60s. Also drop 'Caddy' from the
+section 5 heading, stale since fd3d896."
 ```
 
 ---

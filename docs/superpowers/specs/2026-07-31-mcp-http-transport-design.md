@@ -28,7 +28,7 @@ Scope is the transport and its ingress. Tool behaviour is unchanged.
   what this MCP server itself calls. The hostname is not free.
 - The web app defines no root `/mcp` route (`/dashboard`, `/gallery`,
   `/settings`, `/templates`, `/login`, `/register`, `/api/*`, `/fonts` only), so
-  the **path** `/mcp/` on that host is free.
+  the **path** `/mcp` on that host is free.
 
 ---
 
@@ -47,7 +47,7 @@ five existing tools. stdio keeps working unchanged for existing clients.
 | Target | Public VPS (production) |
 | Authentication | Per-request `x-api-key` header; no environment fallback in HTTP mode |
 | Tool scope | The existing five tools only |
-| Hostname | `mcp.maxflow.space`, MCP mounted at path `/mcp/` |
+| Hostname | `mcp.maxflow.space`, MCP mounted at path `/mcp` |
 
 ---
 
@@ -128,7 +128,7 @@ the transport is chosen by environment.
 
 **`docker-compose.yml`** (development) — `mcp-server` gains
 `MCP_TRANSPORT=http` and publishes `8765:8765` so a local Langflow can reach it
-at `http://localhost:8765/mcp/`.
+at `http://localhost:8765/mcp`.
 
 **`compose.prod.yml`** — remove `deploy.replicas: 0`, add
 `restart: unless-stopped` and a healthcheck against `/health`. No `ports:` entry:

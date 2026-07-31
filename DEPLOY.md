@@ -208,12 +208,12 @@ The MCP server listens on `mcp-server:8765` inside the compose network and is
 not published to the host. The VPS nginx (`rise-gateway`) already terminates
 TLS for `mcp.maxflow.space` and proxies it to `web:3000`. Add two `location`
 blocks to that existing server block: one for the health probe, one for the MCP
-endpoint. The health route is an exact match, which nginx evaluates at higher
-priority, so it wins even though `/mcp` prefix matches will also match
-`/mcp/health`. Without the exact match, a request to `/mcp/health` would be
-rewritten to `/health` — which is correct — then proxied to the server, but
-`/mcp` also matches, so nginx reorders and `/mcp` wins, and the request
-becomes a loop.
+endpoint. An exact-match `location = /mcp/health` maps the public health URL
+onto the real root-level `/health` route. Without it, a request to
+`/mcp/health` would match `location /mcp` (prefix) and be sent upstream
+unchanged to `/mcp/health`, which does not exist, returning 404. nginx
+evaluates exact matches ahead of prefix matches, so the exact-match block takes
+precedence and prevents the 404.
 
 ```nginx
 location = /mcp/health {
@@ -230,10 +230,11 @@ location /mcp {
 ```
 
 The `proxy_pass` without a trailing slash passes the original request URI
-through unchanged. Both `/mcp` and `/mcp/` are matched by the prefix; neither
-has a path segment that is rewritten. This way, a client posting to
-`https://mcp.maxflow.space/mcp` or `https://mcp.maxflow.space/mcp/` reaches
-upstream `/mcp` without redirect loops.
+through unchanged. A request to `/mcp/` is sent upstream as `/mcp/` and the
+server responds with a 307 redirect to `/mcp`, which nginx then re-routes. The
+prefix `location /mcp` matches both `/mcp` and `/mcp/`, so the redirect stays
+inside the same location block and resolves without escaping to a catch-all or
+falling through. This is precisely why the trailing slash is no longer fatal.
 
 No DNS record and no certificate change are needed: this is a path on an
 existing host.
